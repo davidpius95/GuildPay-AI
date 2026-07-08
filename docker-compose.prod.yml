@@ -1,0 +1,96 @@
+# GuildPay AI — production stack for the Guild Server box.
+# Routed by the existing Traefik (`guildserver-traefik`) on the external `guildserver` network,
+# reached publicly via the Cloudflare Tunnel wildcard *.guildserver.io -> localhost:80.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Host used: guildpay.guildserver.io   (already resolves; no DNS/cloudflared change needed)
+
+services:
+  guildpay-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: guildpay-api
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      guildpay-postgres:
+        condition: service_healthy
+      guildpay-redis:
+        condition: service_healthy
+    networks:
+      - guildserver
+      - guildpay-internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=guildserver
+      # API owns webhooks + versioned API + health; higher priority than the dashboard catch-all.
+      - "traefik.http.routers.guildpay-api.rule=Host(`guildpay.guildserver.io`) && (PathPrefix(`/webhooks`) || PathPrefix(`/v1`) || PathPrefix(`/health`))"
+      - traefik.http.routers.guildpay-api.entrypoints=web
+      - traefik.http.routers.guildpay-api.priority=100
+      - traefik.http.services.guildpay-api.loadbalancer.server.port=3001
+
+  guildpay-dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    container_name: guildpay-dashboard
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - guildpay-api
+    networks:
+      - guildserver
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=guildserver
+      # Catch-all for the host: everything not claimed by the API router.
+      - "traefik.http.routers.guildpay-web.rule=Host(`guildpay.guildserver.io`)"
+      - traefik.http.routers.guildpay-web.entrypoints=web
+      - traefik.http.routers.guildpay-web.priority=1
+      - traefik.http.services.guildpay-web.loadbalancer.server.port=3000
+
+  guildpay-postgres:
+    image: postgres:16-alpine
+    container_name: guildpay-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: guildpay
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: guildpay
+    volumes:
+      - guildpay-pgdata:/var/lib/postgresql/data
+    networks:
+      - guildpay-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guildpay"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  guildpay-redis:
+    image: redis:7-alpine
+    container_name: guildpay-redis
+    restart: unless-stopped
+    volumes:
+      - guildpay-redisdata:/data
+    networks:
+      - guildpay-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  # Traefik's provider network — must already exist on the host.
+  guildserver:
+    external: true
+  # Private network for db/redis; never exposed publicly.
+  guildpay-internal:
+    driver: bridge
+
+volumes:
+  guildpay-pgdata:
+  guildpay-redisdata:
