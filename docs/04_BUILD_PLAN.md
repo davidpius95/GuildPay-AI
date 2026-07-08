@@ -24,6 +24,17 @@ Full acceptance criteria for each module are in `docs/01_TECHNICAL_PRD.md` §7.
 - [ ] **M8** Receipts + HISTORY + Transactions dashboard page
 - [ ] ✅ Checkpoint: end-to-end text payment with OTP + receipt on video
 
+## Week 2.5 — NGN rail (Naira via Flutterwave sandbox)
+> Slots in **after M2 (ledger + PartnerAdapter) and M7 (OTP gate)** so payouts route through
+> `PartnerService` and stay OTP-gated. Sandbox/test keys only — no live money.
+- [ ] **M2b** Currency selection at onboarding; `accounts.currency` (QAR|NGN) drives rail resolution
+- [ ] **M2c** Flutterwave sandbox client (keys from env) + `FlutterwavePartnerAdapter` (`fund`/`completeTransfer`/`getBalance`)
+- [ ] NGN virtual account creation per user; Transfers API for payouts
+- [ ] Flutterwave webhook endpoint + `verif-hash` signature verification → transaction status updates
+- [ ] Extend `no-otp-no-money` to assert NGN payouts also require OTP; audit_events on every NGN action
+- [ ] Dashboard shows currency per account/transaction
+- [ ] ✅ Checkpoint: NGN onboarding → funded sandbox account → OTP-confirmed payout → receipt
+
 ## Week 3 — Multimodal
 - [ ] **M4** Voice pipeline (media download → Whisper → intent)
 - [ ] **M5** Snap-to-pay (QR decode + Claude vision extraction + review/edit step)

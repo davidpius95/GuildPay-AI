@@ -5,10 +5,16 @@
 > Keep it short and current. It is the single source of truth for how to build this project.
 
 ## WHY — what we're building
-GuildPay AI is a **WhatsApp-native QAR payment assistant for Qatar**. Users onboard, get a
-demo QAR wallet, and pay locally by **text, voice note, photo, or Excel upload**, confirming
-with **OTP/PIN** and receiving a receipt — all inside WhatsApp. This repo is the **4-week,
-incubation-ready MVP** built on a **simulated ledger** (no real money moves yet).
+GuildPay AI is a **WhatsApp-native payment assistant**. Users onboard, get a wallet, and pay
+by **text, voice note, photo, or Excel upload**, confirming with **OTP/PIN** and receiving a
+receipt — all inside WhatsApp. This repo is the **4-week, incubation-ready MVP**.
+
+Two settlement rails, both behind the same `PartnerAdapter` interface:
+- **QAR (Qatar)** — demo wallet on a **simulated double-entry ledger** (no real money moves).
+- **NGN (Nigeria)** — Naira accounts via **Flutterwave sandbox** (test money only; no live payouts).
+
+The currency chosen at onboarding selects the rail. Flows are currency-agnostic and resolve
+an adapter through `PartnerService`. The OTP/PIN gate applies identically to both rails.
 
 Full detail lives in `/docs`. Read these before planning work:
 - `docs/01_TECHNICAL_PRD.md` — architecture, data model, APIs, security, module specs, 4-week plan
@@ -23,7 +29,9 @@ Full detail lives in `/docs`. Read these before planning work:
 - **DB:** PostgreSQL via **Supabase** (system of record + file storage + dashboard auth)
 - **Cache/session:** Redis (Upstash)
 - **Dashboard:** Next.js 14 + shadcn/ui + Recharts
-- **Ledger:** double-entry demo ledger in Postgres behind a `PartnerAdapter` interface
+- **Payment rails (behind `PartnerAdapter`, selected by currency via `PartnerService`):**
+  - **QAR** → `MockPartnerAdapter` on a double-entry demo ledger in Postgres.
+  - **NGN** → `FlutterwavePartnerAdapter` on the **Flutterwave sandbox** (virtual accounts + Transfers API + webhook `verif-hash`). Test keys only.
 - **Hosting:** Railway (or Hetzner + Docker)
 
 ## HOW — conventions & guardrails
@@ -32,8 +40,9 @@ Full detail lives in `/docs`. Read these before planning work:
   confirmations) must NOT depend on the LLM. The LLM only interprets free-form content.
 - **The AI can PREPARE a transaction but NEVER COMPLETE one.** Only the OTP/PIN verifier may move a
   transaction from `pending_otp → completed`. There must be a passing test `no-otp-no-money`.
-- **All money movement goes through `PartnerAdapter`** (MVP = MockPartnerAdapter on the Postgres ledger).
-  Never call the ledger directly from a flow.
+- **All money movement goes through `PartnerAdapter`** (QAR = MockPartnerAdapter on the Postgres ledger;
+  NGN = FlutterwavePartnerAdapter on the sandbox). Resolve the adapter via `PartnerService.forCurrency`.
+  Never call the ledger or Flutterwave SDK directly from a flow.
 - **Every LLM extraction returns validated JSON** (zod). On validation failure: one retry, then ask a
   clarifying question — never guess a payment amount or recipient.
 - **Secrets** come from environment variables only (see `.env.example`). Never hardcode keys. Never log

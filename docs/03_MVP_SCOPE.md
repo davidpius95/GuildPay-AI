@@ -6,7 +6,9 @@ confirms securely with OTP/PIN, and receives a receipt — all inside WhatsApp.
 
 ## Required modules
 1. **WhatsApp Entry & Onboarding** — link/QR → language → profile + QID + consent → confirmation.
-2. **Demo QAR Account/Wallet Ledger** — account reference, starting balance, funding, ledger history.
+2. **Demo Account/Wallet Ledger (multi-currency)** — account reference, starting balance, funding, ledger history.
+   Two rails behind `PartnerAdapter`: **QAR** on the simulated double-entry ledger, and **NGN** via the
+   **Flutterwave sandbox** (virtual accounts + Transfers API; test money only). Currency is chosen at onboarding.
 3. **Text Payment Flow** — extract recipient/amount/purpose → confirmation summary.
 4. **Voice Note Payment Flow** — transcribe → extract intent → confirm.
 5. **Snap-to-Pay** — read bill/invoice/QR/screenshot/account details → confirm.
@@ -37,5 +39,6 @@ receipted batch · AI support answers + retrieves receipts · QID expiry reminde
 dashboard shows users, transactions, batches, support logs.
 
 ## Out of scope for the demo
-Live money movement · full bank/wallet integration · card issuance · international transfers ·
+Live money movement (QAR ledger is simulated; NGN uses Flutterwave **sandbox** only — no live
+payouts) · full bank/wallet integration · card issuance · international transfers ·
 crypto/lending/investments · large biller/merchant network · full mobile apps.
