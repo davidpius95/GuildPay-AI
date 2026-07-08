@@ -1,0 +1,37 @@
+# Local dev dependencies for GuildPay AI (Week 0).
+# Postgres = system of record (mirrors Supabase Postgres 16); Redis = sessions/OTP/rate-limits.
+# Start with:  docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: guildpay-postgres
+    environment:
+      POSTGRES_USER: guildpay
+      POSTGRES_PASSWORD: guildpay
+      POSTGRES_DB: guildpay
+    ports:
+      - "5432:5432"
+    volumes:
+      - guildpay-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guildpay"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: guildpay-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - guildpay-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  guildpay-pgdata:
+  guildpay-redisdata:
