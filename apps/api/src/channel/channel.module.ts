@@ -20,6 +20,6 @@ export const CHANNEL_ADAPTER = Symbol('CHANNEL_ADAPTER');
         config.get<string>('CHANNEL_ADAPTER') === 'twilio' ? twilio : meta,
     },
   ],
-  exports: [CHANNEL_ADAPTER],
+  exports: [CHANNEL_ADAPTER, MetaCloudAdapter, TwilioSandboxAdapter],
 })
 export class ChannelModule {}
