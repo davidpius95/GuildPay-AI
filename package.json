@@ -13,7 +13,10 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "migrate": "pnpm --filter @guildpay/api migrate",
+    "supabase": "supabase",
+    "db:diff": "supabase db diff",
+    "db:push": "supabase db push",
+    "migrate": "supabase db push",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
   },
   "devDependencies": {
@@ -22,6 +25,7 @@
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "prettier": "^3.3.3",
+    "supabase": "^2.109.1",
     "typescript": "^5.5.4"
   }
 }
