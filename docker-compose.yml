@@ -1,24 +1,13 @@
 # Local dev dependencies for GuildPay AI (Week 0).
-# Postgres = system of record (mirrors Supabase Postgres 16); Redis = sessions/OTP/rate-limits.
+#
+# Database (Postgres) + Storage + Auth come from SUPABASE, not this file:
+#   • Local:  install the Supabase CLI and run `supabase start`
+#             (gives Postgres on :54322, Studio/API on :54321).
+#   • Or point DATABASE_URL / SUPABASE_URL at the self-hosted Supabase on Guild Server.
+# This file only runs Redis (Supabase provides no cache/session store).
+#
 # Start with:  docker compose up -d
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: guildpay-postgres
-    environment:
-      POSTGRES_USER: guildpay
-      POSTGRES_PASSWORD: guildpay
-      POSTGRES_DB: guildpay
-    ports:
-      - "5432:5432"
-    volumes:
-      - guildpay-pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U guildpay" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: guildpay-redis
@@ -33,5 +22,4 @@ services:
       retries: 5
 
 volumes:
-  guildpay-pgdata:
   guildpay-redisdata:

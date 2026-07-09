@@ -70,7 +70,7 @@ Full detail lives in `/docs`. Read these before planning work:
 - `pnpm dev` — run api + dashboard locally
 - `pnpm test` — run all tests (must include `no-otp-no-money`)
 - `pnpm lint` / `pnpm typecheck`
-- `pnpm migrate` — apply Postgres schema migrations
+- `pnpm migrate` — apply Supabase (Postgres) schema migrations
 
 ## Working style for the agent
 Follow **Explore → Plan → Implement → Verify → Commit**:

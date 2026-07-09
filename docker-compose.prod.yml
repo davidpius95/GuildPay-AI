@@ -5,6 +5,10 @@
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Host used: guildpay.guildserver.io   (already resolves; no DNS/cloudflared change needed)
+#
+# Database + Storage + Auth = SUPABASE (self-hosted on this box, or Supabase cloud). No Postgres
+# container here: set DATABASE_URL + SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env. If the API
+# reaches Supabase over a docker network rather than the host, also attach that network below.
 
 services:
   guildpay-api:
@@ -15,8 +19,6 @@ services:
     restart: unless-stopped
     env_file: .env
     depends_on:
-      guildpay-postgres:
-        condition: service_healthy
       guildpay-redis:
         condition: service_healthy
     networks:
@@ -51,24 +53,6 @@ services:
       - traefik.http.routers.guildpay-web.priority=1
       - traefik.http.services.guildpay-web.loadbalancer.server.port=3000
 
-  guildpay-postgres:
-    image: postgres:16-alpine
-    container_name: guildpay-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: guildpay
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: guildpay
-    volumes:
-      - guildpay-pgdata:/var/lib/postgresql/data
-    networks:
-      - guildpay-internal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U guildpay"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   guildpay-redis:
     image: redis:7-alpine
     container_name: guildpay-redis
@@ -87,10 +71,9 @@ networks:
   # Traefik's provider network — must already exist on the host.
   guildserver:
     external: true
-  # Private network for db/redis; never exposed publicly.
+  # Private network for redis; never exposed publicly.
   guildpay-internal:
     driver: bridge
 
 volumes:
-  guildpay-pgdata:
   guildpay-redisdata:

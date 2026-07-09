@@ -143,19 +143,22 @@ Copy `.env.production.example` → `.env` on the server and fill these in. **Nev
 | `STT_PROVIDER` | ✅ | `openai` or `local` |
 | `OPENAI_API_KEY` | ✅ if `STT_PROVIDER=openai` | platform.openai.com |
 | `STT_LOCAL_URL` | ✅ if `STT_PROVIDER=local` | `http://guildpay-whisper:9000` |
-| `DATABASE_URL` | ✅ | `postgresql://guildpay:<pw>@guildpay-postgres:5432/guildpay` |
+| `SUPABASE_URL` | ✅ | Supabase project API URL (self-hosted or cloud) |
+| `SUPABASE_ANON_KEY` | ✅ | Supabase → API settings (dashboard client) |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Supabase → API settings — **server-side only** |
+| `DATABASE_URL` | ✅ | Postgres connection string for the Supabase project (pooled/session URL) |
 | `REDIS_URL` | ✅ | `redis://guildpay-redis:6379` |
 | `FLW_PUBLIC_KEY` | ✅ (NGN) | Flutterwave test keys |
 | `FLW_SECRET_KEY` | ✅ (NGN) | Flutterwave test keys |
 | `FLW_ENCRYPTION_KEY` | ✅ (NGN) | Flutterwave test keys |
 | `FLW_WEBHOOK_SECRET_HASH` | ✅ (NGN) | **You invent it**; paste same value into Flutterwave webhook settings |
 | `FLW_BASE_URL` | ✅ (NGN) | `https://api.flutterwave.com/v3` |
-| `MEDIA_STORAGE` | ✅ | `local` (volume) or `supabase` |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | if `MEDIA_STORAGE=supabase` | your self-hosted Supabase |
+| `MEDIA_STORAGE` | ✅ | `supabase` (Supabase Storage) or `local` |
+| `SUPABASE_MEDIA_BUCKET` | if `MEDIA_STORAGE=supabase` | e.g. `guildpay-media` |
 | `SENTRY_DSN` | – | sentry.io (optional) |
 
 **Secrets you invent yourself** (not issued by a provider): `META_WEBHOOK_VERIFY_TOKEN`,
-`FLW_WEBHOOK_SECRET_HASH`, the Postgres password, and the dashboard admin credentials. Generate them:
+`FLW_WEBHOOK_SECRET_HASH`, and the dashboard admin credentials. Generate them:
 ```bash
 openssl rand -hex 24
 ```
@@ -196,12 +199,14 @@ Detected on `usher-node@143.105.102.121` (read-only check):
 - **Traefik v3.6** (`guildserver-traefik`) is the ingress on ports 80/443/8080, docker provider,
   network `guildserver`, `exposedbydefault=false`, Let's Encrypt resolver `letsencrypt`.
 - **Cloudflared** systemd service, tunnel `1c20b73e-…`, wildcard `*.guildserver.io → localhost:80`.
-- A self-hosted **Supabase BaaS platform** already running (multiple stacks) — reusable for storage.
-- No Postgres/Redis client on the host, but Postgres runs in containers. We add **dedicated**
-  `guildpay-postgres` + `guildpay-redis` containers so GuildPay is isolated from the BaaS stacks.
+- A self-hosted **Supabase BaaS platform** already running (multiple stacks) — **GuildPay uses this
+  for Postgres + Storage + Auth.** Create a dedicated GuildPay project/schema on it.
+- GuildPay adds only a **`guildpay-redis`** container (Supabase provides no cache/session store).
 
-**Implication:** GuildPay slots in as another Traefik-routed app on the `guildserver` network. No
-changes to cloudflared, DNS, or Traefik itself — the app containers carry their own routing labels.
+**Implication:** GuildPay slots in as another Traefik-routed app on the `guildserver` network, backed
+by your existing Supabase. No changes to cloudflared, DNS, or Traefik — the app containers carry their
+own routing labels. Ensure `guildpay-api` can reach the Supabase Postgres (same host, or attach the
+Supabase docker network in `docker-compose.prod.yml`) and set `DATABASE_URL` accordingly.
 
 ---
 
@@ -231,11 +236,11 @@ curl https://guildpay.guildserver.io/health          # -> {"status":"ok",...}
 ```
 Then set the Meta and Flutterwave webhook URLs (§4) and send a WhatsApp message to your test number.
 
-### 6.4 (Optional) Use your existing self-hosted Supabase for media storage
-You already run Supabase on the box. To store voice/image/xlsx there instead of a local volume, set
-`MEDIA_STORAGE=supabase` and point `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` at your stack, and
-create a `guildpay-media` storage bucket. For the MVP, `MEDIA_STORAGE=local` (a Docker volume) is the
-simplest and is the default.
+### 6.4 Supabase Storage for media (default)
+Voice notes, images, and xlsx are stored in **Supabase Storage**. Create a `guildpay-media` bucket in
+your Supabase project and set `MEDIA_STORAGE=supabase` + `SUPABASE_MEDIA_BUCKET=guildpay-media`
+(uploads use `SUPABASE_SERVICE_ROLE_KEY`, server-side only). `MEDIA_STORAGE=local` (a Docker volume)
+remains available as a fallback for pure-offline dev.
 
 ### 6.5 How routing works (already wired in the compose labels)
 - `guildpay.guildserver.io/` → **dashboard** container (Next.js, port 3000)
@@ -272,7 +277,8 @@ stay on a private `guildpay-internal` network (not exposed publicly).
 - [ ] Anthropic key + credit  → `.env`
 - [ ] STT: OpenAI key **or** self-hosted whisper  → `.env`
 - [ ] Flutterwave test keys + webhook secret hash  → `.env`
-- [ ] Invent `META_WEBHOOK_VERIFY_TOKEN`, `FLW_WEBHOOK_SECRET_HASH`, Postgres password  → `.env`
+- [ ] Supabase project: URL + anon + service-role keys + `DATABASE_URL` + `guildpay-media` bucket  → `.env`
+- [ ] Invent `META_WEBHOOK_VERIFY_TOKEN`, `FLW_WEBHOOK_SECRET_HASH`  → `.env`
 - [ ] `docker compose -f docker-compose.prod.yml up -d --build` on the server
 - [ ] `curl https://guildpay.guildserver.io/health` returns ok
 - [ ] Set Meta webhook URL + verify token; subscribe to `messages`
