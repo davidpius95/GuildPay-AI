@@ -1,25 +1,31 @@
-import type { Currency } from '@guildpay/shared';
+import type { Currency, NameEnquiryResult } from '@guildpay/shared';
 
 /**
- * PartnerAdapter — the single boundary for all money movement.
+ * PartnerAdapter — the single boundary for external settlement + account services.
  *
- * Flows NEVER touch the ledger or a payment provider directly; they call a
- * PartnerAdapter. One adapter per settlement rail:
- *   - QAR -> MockPartnerAdapter (internal double-entry Postgres ledger, no real money)
- *   - NGN -> FlutterwaveAdapter (Flutterwave sandbox — test money)
+ * Capability modules never touch a provider SDK or the ledger directly; they use
+ * `WalletService` (internal balances) + a PartnerAdapter (external rail):
+ *   - NGN → FlutterwavePartnerAdapter (Flutterwave sandbox — test money)
+ *   - QAR → MockPartnerAdapter (simulated ledger)
  *
- * Swapping a licensed partner later means implementing this interface, not
- * rewriting flows. The AI can PREPARE a transfer but only the OTP/PIN verifier
- * calls `completeTransfer` — see the `no-otp-no-money` gate.
+ * The AI PREPARES; only the OTP/PIN verifier calls the money-moving methods
+ * (`bankTransfer`, `fund`) — enforced by the `no-otp-no-money` gate.
+ * Before any `bankTransfer`, callers MUST `nameEnquiry` and confirm the resolved name.
  */
-export interface TransferRequest {
+export interface CreateVirtualAccountResult {
+  accountNumber: string; // NUBAN (NGN) or simulated reference (QAR)
+  bankName: string;
+  providerRef: string;
+}
+
+export interface BankTransferRequest {
   transactionId: string;
   fromAccountRef: string;
-  recipientRef: string;
-  recipientName?: string;
+  accountNumber: string;
+  bankCode: string;
+  recipientName: string; // the name confirmed via nameEnquiry
   amount: number;
-  currency: Currency;
-  purpose?: string;
+  narration?: string;
 }
 
 export interface TransferResult {
@@ -39,11 +45,17 @@ export interface PartnerAdapter {
   /** Currency rail this adapter settles. */
   readonly currency: Currency;
 
-  /** Fund a demo/sandbox account (funding is itself an OTP-gated action). */
-  fund(accountRef: string, amount: number): Promise<TransferResult>;
+  /** Provision the account a user funds into (NUBAN for NGN; simulated ref for QAR). */
+  createVirtualAccount(userRef: string): Promise<CreateVirtualAccountResult>;
 
-  /** Move money. MUST only be invoked after OTP/PIN verification. */
-  completeTransfer(req: TransferRequest): Promise<TransferResult>;
+  /** Resolve the account holder's name before a payout. Never transfer without this. */
+  nameEnquiry(accountNumber: string, bankCode: string): Promise<NameEnquiryResult>;
+
+  /** Move money to an external bank account (NIP). OTP/PIN-gated by the caller. */
+  bankTransfer(req: BankTransferRequest): Promise<TransferResult>;
+
+  /** Fund a demo/sandbox account (or detect an inbound funding event). */
+  fund(accountRef: string, amount: number): Promise<TransferResult>;
 
   getBalance(accountRef: string): Promise<BalanceResult>;
 }

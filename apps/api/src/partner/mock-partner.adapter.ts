@@ -1,30 +1,41 @@
 import { Injectable } from '@nestjs/common';
-import type { Currency } from '@guildpay/shared';
+import type { Currency, NameEnquiryResult } from '@guildpay/shared';
 import type {
   BalanceResult,
+  BankTransferRequest,
+  CreateVirtualAccountResult,
   PartnerAdapter,
-  TransferRequest,
   TransferResult,
 } from './partner-adapter';
 
+const NOT_YET = 'MockPartnerAdapter (QAR) not implemented until M2 (WalletService + ledger).';
+
 /**
- * MockPartnerAdapter — QAR rail on the internal double-entry ledger.
- * Week 0 stub: the real Postgres-backed double-entry implementation lands in
- * M2 (docs/04_BUILD_PLAN.md, Week 1). No real money moves.
+ * MockPartnerAdapter — QAR rail on the internal simulated ledger.
+ * QAR supports wallet + P2P + internal transfer only (no NIP/bills). Week 0 stub;
+ * real Postgres-backed implementation lands in M2.
  */
 @Injectable()
 export class MockPartnerAdapter implements PartnerAdapter {
   readonly currency: Currency = 'QAR';
 
-  async fund(_accountRef: string, _amount: number): Promise<TransferResult> {
-    throw new Error('MockPartnerAdapter.fund not implemented until M2 (ledger).');
+  async createVirtualAccount(_userRef: string): Promise<CreateVirtualAccountResult> {
+    throw new Error(NOT_YET);
   }
 
-  async completeTransfer(_req: TransferRequest): Promise<TransferResult> {
-    throw new Error('MockPartnerAdapter.completeTransfer not implemented until M2 (ledger).');
+  async nameEnquiry(_accountNumber: string, _bankCode: string): Promise<NameEnquiryResult> {
+    throw new Error('QAR has no external bank rail (name enquiry is NGN-only).');
+  }
+
+  async bankTransfer(_req: BankTransferRequest): Promise<TransferResult> {
+    throw new Error('QAR has no external bank rail (NIP is NGN-only).');
+  }
+
+  async fund(_accountRef: string, _amount: number): Promise<TransferResult> {
+    throw new Error(NOT_YET);
   }
 
   async getBalance(_accountRef: string): Promise<BalanceResult> {
-    throw new Error('MockPartnerAdapter.getBalance not implemented until M2 (ledger).');
+    throw new Error(NOT_YET);
   }
 }

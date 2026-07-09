@@ -4,6 +4,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { HealthController } from './health/health.controller';
 import { ChannelModule } from './channel/channel.module';
 import { PartnerModule } from './partner/partner.module';
+import { BillsModule } from './bills/bills.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PartnerModule } from './partner/partner.module';
     }),
     ChannelModule,
     PartnerModule,
+    BillsModule,
   ],
   controllers: [HealthController],
 })

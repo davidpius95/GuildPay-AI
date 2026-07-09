@@ -14,9 +14,9 @@
 | **Cloudflare Tunnel + DNS** | Public HTTPS for `guildpay.guildserver.io` | ✅ Free | Wildcard route already exists — subdomain already resolves. |
 | **Meta WhatsApp Cloud API** | Send/receive WhatsApp | ✅ Free tier | 1,000 service conversations/mo free. Test number is free. |
 | **Twilio WhatsApp Sandbox** | Fallback channel | ✅ Free | Instant sandbox; only if Meta verification stalls. |
-| **PostgreSQL** (self-hosted container) | System of record + ledger | ✅ Free | Runs on your box. (Or reuse your self-hosted Supabase.) |
+| **Supabase** (self-hosted on your box) | Postgres (system of record + ledger) + Storage (media) + Auth (dashboard) | ✅ Free | You already run Supabase on the Guild Server. (Supabase cloud free tier also works.) |
 | **Redis** (self-hosted container) | Sessions, OTP TTLs, rate limits | ✅ Free | Runs on your box. (Or Upstash free tier.) |
-| **Flutterwave** | NGN rail (Naira) | ✅ Free (sandbox) | Test keys only. No live payouts in MVP. |
+| **Flutterwave** | NGN rail: transfers **+ Bills (airtime/data/bills)** | ✅ Free (sandbox) | Test keys only. One provider covers payouts and VTU. No live money in MVP. |
 | **Anthropic Claude API** | Intent + vision extraction + support | 💲 **Paid (usage)** | ~$30–80 across the whole demo. The one unavoidable spend. New orgs may get trial credit. |
 | **Speech-to-text** | Voice notes → text | 💲 or ✅ | OpenAI Whisper ≈ $5–15 (simplest), **or** self-host `faster-whisper` on your box = free. |
 | **Sentry** | Error tracking (optional) | ✅ Free tier | Optional for demo. |
@@ -67,20 +67,25 @@ Do these in order — item 1 has the longest lead time.
   / 15 GB RAM — fine for demo volume). Point the STT service at `http://guildpay-whisper:9000`.
   → Fills: `STT_PROVIDER=local`, `STT_LOCAL_URL`. (No OpenAI key needed.)
 
-### 1.5 Flutterwave (NGN rail) — *sandbox, free*
+### 1.5 Flutterwave (NGN rail: transfers **and** bills) — *sandbox, free*
+One provider covers both bank payouts and VTU (airtime/data/bills — via the **Flutterwave Bills** API).
 1. Sign up: https://dashboard.flutterwave.com
 2. Toggle to **Test/Sandbox** mode. **Settings → API Keys** → copy the **TEST** keys
    (`FLWPUBK_TEST-…`, `FLWSECK_TEST-…`) and **Encryption Key**.
 3. **Settings → Webhooks** → set the URL (see §4) and a **Secret hash** — you choose this string; it
-   comes back in the `verif-hash` header so you can verify webhooks.
+   comes back in the `verif-hash` header so you can verify webhooks (funding + payout + bill status).
 
 → Fills: `FLW_PUBLIC_KEY`, `FLW_SECRET_KEY`, `FLW_ENCRYPTION_KEY`, `FLW_WEBHOOK_SECRET_HASH`, `FLW_BASE_URL`.
+The same keys drive Transfers, virtual accounts, name enquiry, **and Bills** — no extra VTU account.
 
-### 1.6 Database & cache — *self-hosted on your box (free)*
-No signup. The production compose file runs a dedicated `guildpay-postgres` and `guildpay-redis`
-container. (Alternative: reuse your existing self-hosted Supabase stack for storage/auth — see §6.4.)
+### 1.6 Supabase (DB + Storage + Auth) — *self-hosted on your box (free)*
+You already run Supabase on the Guild Server. Create a **GuildPay project/schema** on it (or spin a
+dedicated stack), then copy the project URL, the **service-role** key (server-side only), the anon key,
+and the Postgres connection string.
+- **Alternative:** Supabase cloud free tier (https://supabase.com) — same variables.
+- Redis is a self-hosted container (in the compose file) — no signup.
 
-→ Fills: `DATABASE_URL`, `REDIS_URL`.
+→ Fills: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `DATABASE_URL`, `REDIS_URL`.
 
 ### 1.7 Sentry (optional)
 Sign up https://sentry.io (free tier) → create a Node project → copy the DSN. → `SENTRY_DSN`.

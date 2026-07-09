@@ -1,20 +1,29 @@
 # GuildPay AI — Technical PRD & Implementation Plan
 
-**Version:** 1.0 · July 2026
+**Version:** 2.0 · July 2026
 **Owner:** David Uzochukwu, Guild Technologies LLC (QFC #04407)
 **Status:** Build-ready specification for the incubation-demo MVP
-**Companion documents:** GuildPay AI Business Plan (July 2026), GuildPay AI Functional MVP Build Scope
+**Companion documents:** `docs/00_VISION_AND_ARCHITECTURE.md` (north star), GuildPay AI Business Plan
+
+> **⚠️ Reframe (v2):** GuildPay AI is a **WhatsApp-native conversational neobank** — a full wallet where
+> users create a virtual account and do **every everyday money action** (send to a user, transfer to any
+> bank, buy airtime/data, pay bills, save) by natural language, voice, or photo. Same category as
+> **Xara** (usexara.ai). Two co-equal markets: **NGN (Nigeria, flagship, Flutterwave sandbox)** and
+> **QAR (Qatar, simulated ledger, wallet+transfer subset)**. Money is **sandbox/simulated, real-ready**.
+> `docs/00_VISION_AND_ARCHITECTURE.md` and `docs/03_MVP_SCOPE.md` are authoritative for scope; where the
+> module-by-module sections below still read as "Qatar QAR payments only," treat them as being aligned
+> to that vision (capability modules + `WalletService` / `PartnerAdapter` / `BillsAdapter`).
 
 ---
 
 ## 1. Purpose & Scope of This Document
 
-This document translates the Functional MVP Build Scope into an engineering-executable specification. It defines the system architecture, technology stack, data model, API contracts, module-by-module requirements, AI orchestration design, security controls, environment setup, testing plan, demo runbook, and a week-by-week implementation plan with acceptance criteria.
+This document translates the Functional MVP Scope into an engineering-executable specification. It defines the system architecture, technology stack, data model, API contracts, module-by-module requirements, AI orchestration design, security controls, environment setup, testing plan, demo runbook, and a week-by-week implementation plan with acceptance criteria.
 
-**In scope:** Everything needed to build the 4-week, incubation-ready WhatsApp demo with a simulated ledger.
-**Out of scope (per MVP Scope §12):** Live money movement, bank/wallet integration, card issuance, international transfers, crypto, lending, mobile apps.
+**In scope:** Everything needed to build the 4-week, incubation-ready WhatsApp conversational-banking demo across NGN + QAR on sandbox/simulated rails.
+**Out of scope:** Live money movement, licensed bank/PSSP integration, virtual/physical cards, international transfers, crypto, lending, mobile apps.
 
-**Definition of done:** A reviewer scans a QR code, onboards in WhatsApp, receives a demo QAR account, completes a text / voice / image / Excel payment with OTP or PIN, receives receipts, asks the AI support questions, and the presenter shows all of it live in an admin dashboard — reliably, in a 7–10 minute demo.
+**Definition of done:** A reviewer onboards in WhatsApp, receives a virtual account, and by text / voice / photo completes a P2P transfer, a **bank transfer (with name enquiry)**, an **airtime/data purchase**, and a **bill payment** — each with OTP/PIN and a receipt — plus creates a savings goal and asks the AI support questions, with the presenter showing all of it live in an admin dashboard, reliably, in a 7–10 minute demo.
 
 ---
 

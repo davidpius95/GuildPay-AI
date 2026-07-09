@@ -1,51 +1,54 @@
 # GuildPay AI — Build Plan (work through this in order)
 
-Check off items as they land. Each week ends with a recorded checkpoint demo.
-Full acceptance criteria for each module are in `docs/01_TECHNICAL_PRD.md` §7.
+> Serves `docs/00_VISION_AND_ARCHITECTURE.md` (vision) and `docs/03_MVP_SCOPE.md` (capabilities).
+> Check off items as they land. Each week ends with a recorded checkpoint demo.
+> Full acceptance criteria per module are in `docs/01_TECHNICAL_PRD.md` §7.
 
 ## Week 0 — Setup (1–2 days)
-- [ ] Create accounts: Meta Business + WhatsApp app (test number), Anthropic, OpenAI, Supabase, Upstash, Railway, domain
-- [ ] **Submit Meta business verification (do this first — longest lead time)**
-- [ ] Monorepo scaffold: `apps/api`, `apps/dashboard`, `packages/shared`; CI (lint, typecheck, test)
-- [ ] Docker Compose for local (api, postgres, redis); Supabase schema migration tool wired
-- [ ] Twilio Sandbox wired behind `ChannelAdapter` as fallback
+- [x] Monorepo scaffold: `apps/api`, `apps/dashboard`, `packages/shared`; CI (lint, typecheck, test)
+- [x] Docker Compose for local (api, postgres, redis); prod stack for guildpay.guildserver.io
+- [x] `ChannelAdapter` (Meta + Twilio) + `PartnerAdapter`/`BillsAdapter` boundaries stubbed
+- [ ] Create accounts: Meta Business + WhatsApp app (test number), Anthropic, STT (OpenAI or self-host),
+      Flutterwave (sandbox). **Submit Meta business verification first — longest lead time.**
+- [ ] Schema migration tool wired (Postgres)
 
-## Week 1 — Foundation
+## Week 1 — Foundation & wallet
 - [ ] Webhook receiver + signature verification + message normalizer + outbound sender (echo bot live)
 - [ ] Redis session store + conversation state machine skeleton + global keywords (CANCEL/BALANCE/HELP)
-- [ ] **M1** WhatsApp onboarding (language, name, QID validation, consent)
-- [ ] **M2** Demo wallet ledger + `PartnerAdapter(Mock)` + FUND/BALANCE + dashboard Users page
-- [ ] ✅ Checkpoint: onboarding + funding demo recorded
+- [ ] **M1** Onboarding: language (EN/Pidgin/AR) → profile → **currency/market select** → KYC id
+      (BVN for NGN, QID for QAR) → consent → **virtual account created & shown in chat**
+- [ ] **M2** `WalletService` (double-entry ledger, multi-currency) + `PartnerAdapter(Mock, QAR)` +
+      FUND/BALANCE + dashboard Users page
+- [ ] ✅ Checkpoint: onboarding + virtual account + funding (QAR simulated) recorded
 
-## Week 2 — Payments core
-- [ ] AI Orchestrator: intent classifier + text extraction (zod-validated) + clarification loop
-- [ ] **M3** Text payment flow (confirmation card, edit/cancel)
-- [ ] **M7** OTP/PIN service + `no-otp-no-money` test suite (release gate)
+## Week 2 — Transaction core + OTP gate
+- [ ] AI Orchestrator: **intent classifier** (transfer / bank-transfer / airtime / bill / balance / …)
+      + payload extraction (zod-validated) + clarification loop
+- [ ] **M3** Send to GuildPay user (P2P): confirmation card, edit/cancel
+- [ ] **M7** OTP/PIN service + `no-otp-no-money` test suite covering every capability (release gate)
 - [ ] **M8** Receipts + HISTORY + Transactions dashboard page
-- [ ] ✅ Checkpoint: end-to-end text payment with OTP + receipt on video
+- [ ] ✅ Checkpoint: end-to-end P2P transfer with OTP + receipt on video
 
-## Week 2.5 — NGN rail (Naira via Flutterwave sandbox)
-> Slots in **after M2 (ledger + PartnerAdapter) and M7 (OTP gate)** so payouts route through
-> `PartnerService` and stay OTP-gated. Sandbox/test keys only — no live money.
-- [ ] **M2b** Currency selection at onboarding; `accounts.currency` (QAR|NGN) drives rail resolution
-- [ ] **M2c** Flutterwave sandbox client (keys from env) + `FlutterwavePartnerAdapter` (`fund`/`completeTransfer`/`getBalance`)
-- [ ] NGN virtual account creation per user; Transfers API for payouts
-- [ ] Flutterwave webhook endpoint + `verif-hash` signature verification → transaction status updates
-- [ ] Extend `no-otp-no-money` to assert NGN payouts also require OTP; audit_events on every NGN action
-- [ ] Dashboard shows currency per account/transaction
-- [ ] ✅ Checkpoint: NGN onboarding → funded sandbox account → OTP-confirmed payout → receipt
+## Week 2.5 — NGN rail live (Flutterwave sandbox)
+- [ ] **M2b** `FlutterwavePartnerAdapter`: create **virtual NUBAN**, fund detection via webhook
+      (`verif-hash`), `getBalance`
+- [ ] **M3b** **Bank transfer (NIP)**: `nameEnquiry` → confirm resolved name → OTP → payout → receipt
+- [ ] **M6a** **Airtime / data** via `FlutterwaveBillsAdapter` (`buyAirtime` / `buyData`)
+- [ ] **M6b** **Bill payments** (electricity / cable / betting): `validateCustomer` → pay → token/receipt
+- [ ] Extend `no-otp-no-money` + `audit_events` to all NGN money actions; dashboard shows currency/rail
+- [ ] ✅ Checkpoint: NGN onboarding → funded NUBAN → OTP-confirmed bank transfer, airtime, and a bill
 
-## Week 3 — Multimodal
-- [ ] **M4** Voice pipeline (media download → Whisper → intent)
-- [ ] **M5** Snap-to-pay (QR decode + Claude vision extraction + review/edit step)
-- [ ] **M6** Excel bulk: template parser (SheetJS) + row validator + batch approval + batch receipt + error report
-- [ ] Bulk dashboard page
-- [ ] ✅ Checkpoint: all four input channels produce completed, receipted transactions
+## Week 3 — Multimodal + savings
+- [ ] **M4** Voice pipeline (media download → Whisper → intent) across all capabilities
+- [ ] **M5** Snap-to-pay (Claude vision: invoice / bank details / meter no / QR → prefilled action)
+- [ ] **M9** Savings / target-savings (sub-ledger) + Request money
+- [ ] Spending-insights summary + dashboard pages (bills, savings)
+- [ ] ✅ Checkpoint: text + voice + photo each drive a completed, receipted transaction; savings goal funded
 
 ## Week 4 — Support, polish, demo hardening
-- [ ] **M9** AI support agent (FAQ corpus, tools, freeze, escalation) + Support dashboard page
-- [ ] QID expiry reminder job + low-balance alert (+ dashboard trigger button)
-- [ ] **M10** Dashboard Overview (live feed), Risk panel, OTP console, `/v1/demo/reset`, viewer role
-- [ ] Arabic pass on onboarding + confirmation cards + support answers
+- [ ] **M10** AI support agent (FAQ corpus, tools, freeze, escalation) + Support dashboard page
+- [ ] Reminder jobs (KYC/QID expiry, low-balance) + dashboard trigger button
+- [ ] **M11** Dashboard Overview (live feed), Risk panel, OTP console, `/v1/demo/reset`, viewer role
+- [ ] Language pass (Pidgin + Arabic) on onboarding + confirmation cards + support answers
 - [ ] 3 full rehearsals with demo reset between runs; record 7–10 min demo video + screenshot pack
 - [ ] ✅ Checkpoint: all MVP success criteria green (PRD §14)
