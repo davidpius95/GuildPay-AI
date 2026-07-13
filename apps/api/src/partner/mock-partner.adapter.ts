@@ -3,6 +3,7 @@ import type { Currency, NameEnquiryResult } from '@guildpay/shared';
 import type {
   BalanceResult,
   BankTransferRequest,
+  CreateVirtualAccountRequest,
   CreateVirtualAccountResult,
   PartnerAdapter,
   TransferResult,
@@ -19,7 +20,7 @@ const NOT_YET = 'MockPartnerAdapter (QAR) not implemented until M2 (WalletServic
 export class MockPartnerAdapter implements PartnerAdapter {
   readonly currency: Currency = 'QAR';
 
-  async createVirtualAccount(_userRef: string): Promise<CreateVirtualAccountResult> {
+  async createVirtualAccount(_req: CreateVirtualAccountRequest): Promise<CreateVirtualAccountResult> {
     throw new Error(NOT_YET);
   }
 

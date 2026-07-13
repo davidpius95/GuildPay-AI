@@ -12,6 +12,17 @@ import type { Currency, NameEnquiryResult } from '@guildpay/shared';
  * (`bankTransfer`, `fund`) — enforced by the `no-otp-no-money` gate.
  * Before any `bankTransfer`, callers MUST `nameEnquiry` and confirm the resolved name.
  */
+export interface CreateVirtualAccountRequest {
+  /** Internal wallet/user reference — sent as Flutterwave `tx_ref`, must be unique. */
+  userRef: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  /** Required for a permanent NGN NUBAN in live mode; Flutterwave validates it at creation. */
+  bvn?: string;
+}
+
 export interface CreateVirtualAccountResult {
   accountNumber: string; // NUBAN (NGN) or simulated reference (QAR)
   bankName: string;
@@ -46,7 +57,7 @@ export interface PartnerAdapter {
   readonly currency: Currency;
 
   /** Provision the account a user funds into (NUBAN for NGN; simulated ref for QAR). */
-  createVirtualAccount(userRef: string): Promise<CreateVirtualAccountResult>;
+  createVirtualAccount(req: CreateVirtualAccountRequest): Promise<CreateVirtualAccountResult>;
 
   /** Resolve the account holder's name before a payout. Never transfer without this. */
   nameEnquiry(accountNumber: string, bankCode: string): Promise<NameEnquiryResult>;

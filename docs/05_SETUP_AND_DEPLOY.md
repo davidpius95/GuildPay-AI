@@ -81,6 +81,33 @@ One provider covers both bank payouts and VTU (airtime/data/bills — via the **
 → Fills: `FLW_PUBLIC_KEY`, `FLW_SECRET_KEY`, `FLW_ENCRYPTION_KEY`, `FLW_WEBHOOK_SECRET_HASH`, `FLW_BASE_URL`.
 The same keys drive Transfers, virtual accounts, name enquiry, **and Bills** — no extra VTU account.
 
+#### Going live (real money, real BVN) — §1.5-live
+Nothing in the base URL changes; **live is a key swap + three feature approvals**. Do this only when
+you're ready to move real funds.
+
+1. **Activate the business (KYB).** Dashboard → **Compliance / Business profile** → submit CAC
+   certificate, directors' IDs, proof of address, settlement bank account. Approval is manual (days).
+2. **Request the features that are OFF by default even on a live account** — open a ticket / ask your
+   Flutterwave account manager to enable, for your live merchant:
+   - **BVN verification / Identity lookups** (needed for consent-based BVN checks).
+   - **Permanent virtual accounts (NUBAN)** (needed to provision the account users fund into).
+3. **Swap keys.** Dashboard → toggle **Live** → **Settings → API Keys** → copy the live
+   `FLWPUBK-…` / `FLWSECK-…` / live **Encryption Key** into `.env`, and set `MONEY_MODE=live`.
+4. **Re-set the webhook in Live mode** (webhook config is per-mode — the test-mode hash does NOT carry
+   over). Set the URL + a fresh **Secret hash** → `FLW_WEBHOOK_SECRET_HASH` (see §4).
+5. Set `FLW_BVN_REDIRECT_URL` to your consent return URL (only needed for the Option A consent flow).
+
+**BVN — two ways, pick one (implemented in `FlutterwavePartnerAdapter`):**
+- **Option B (default, simplest):** pass the user's `bvn` straight into permanent-NUBAN creation
+  (`POST /v3/virtual-account-numbers`, `is_permanent: true`). Flutterwave validates the BVN at
+  creation and rejects a bad/mismatched one — so account creation *is* the BVN gate. Add a phone
+  cross-check on your side. No consent webhook needed.
+- **Option A (strict consent flow):** `POST /v3/bvn/verifications` → redirect user to the returned
+  consent URL (NIBSS OTP) → result arrives on the **`bvn.verification.completed`** webhook → confirm
+  the returned phone == the user's WhatsApp number → then create the account.
+
+> Endpoint reference (payloads) for all live calls — funding, payout, name enquiry, BVN — is in §4.
+
 ### 1.6 Supabase (DB + Storage + Auth) — *self-hosted on your box (free)*
 You already run Supabase on the Guild Server. Create a **GuildPay project/schema** on it (or spin a
 dedicated stack), then copy the project URL, the **service-role** key (server-side only), the anon key,
@@ -184,9 +211,36 @@ All webhooks are public HTTPS URLs under your domain (TLS handled by Cloudflare)
 - **Verify token:** the exact string you set in `META_WEBHOOK_VERIFY_TOKEN`
 - **Subscribe** to the `messages` field.
 
-**Flutterwave webhook setup:** Dashboard → Settings → Webhooks:
+**Flutterwave webhook setup:** Dashboard → Settings → Webhooks (set this **per mode** — test and live
+are separate):
 - **URL:** `https://guildpay.guildserver.io/webhooks/flutterwave`
 - **Secret hash:** the exact string you set in `FLW_WEBHOOK_SECRET_HASH`.
+- One URL receives **all** events; `FlutterwaveController` verifies `verif-hash` then switches on `event`.
+
+**Events GuildPay routes** (in `flutterwave.controller.ts`):
+| `event` | Meaning | What GuildPay does |
+|---|---|---|
+| `charge.completed` | Money landed in a user's NUBAN | Re-verify with `GET /v3/transactions/:id/verify`, confirm `amount`+`currency`+`status=successful`, then credit the ledger. **Never trust the webhook amount alone.** |
+| `transfer.completed` | Outbound NIP payout result | Reconcile by `reference`. On `FAILED`, Flutterwave auto-reverses — un-hold the ledger. |
+| `bvn.verification.completed` | Consent BVN result (Option A) | Cross-check returned `phone` == user's WhatsApp number, then advance KYC. |
+
+> Idempotency: dedupe on `data.id` / `flw_ref` — Flutterwave **retries** and can deliver twice.
+
+### 4.1 Live Flutterwave API endpoints (v3)
+Base `https://api.flutterwave.com/v3`, header `Authorization: Bearer $FLW_SECRET_KEY`. All wrapped in
+`{ status, message, data }`. These are the calls `FlutterwavePartnerAdapter` makes:
+
+| Purpose | Call | Key request fields |
+|---|---|---|
+| Create NUBAN | `POST /virtual-account-numbers` | `email`, `tx_ref`, `is_permanent: true`, `bvn`, `firstname`, `lastname`, `phonenumber` → returns `account_number`, `bank_name` |
+| BVN consent (Option A) | `POST /bvn/verifications` | `bvn`, `firstname`, `lastname`, `redirect_url` → returns consent `url`; result via `bvn.verification.completed` webhook |
+| Name enquiry (pre-payout) | `POST /accounts/resolve` | `account_number`, `account_bank` (code) → returns `account_name` |
+| Bank transfer (NIP) | `POST /transfers` | `account_bank`, `account_number`, `amount`, `currency: NGN`, `reference` → result via `transfer.completed` |
+| Verify a charge | `GET /transactions/:id/verify` | → `status`, `amount`, `currency`, `tx_ref` |
+| Bank codes | `GET /banks/NG` | → list of `{ code, name }` for name enquiry / transfers |
+
+> **Never log** the request body of these calls — they carry BVN / account numbers. The adapter logs
+> only method + path + status.
 
 > These endpoints are implemented in Week 1 (WhatsApp) and the Week 2.5 NGN rail (Flutterwave).
 > Until then the routes 404 — that's expected.
