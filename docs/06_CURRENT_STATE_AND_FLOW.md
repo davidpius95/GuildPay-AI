@@ -4,7 +4,8 @@
 > `apps/api` — not the aspirational spec. It shows exactly what happens when a customer messages,
 > which paths are live, which are built-but-unwired, and what remains for a complete end-to-end MVP.
 >
-> Last verified against `main` @ commit `29518b6` (Flutterwave NGN adapter + webhook routing).
+> Last verified against `main` @ commit `b24b5e3` (P0 NGN rail live: NUBAN provisioning,
+> funding-webhook credit, bank transfer/NIP; voice notes wired).
 > Companion to `04_BUILD_PLAN.md` (the checklist) and `05_SETUP_AND_DEPLOY.md` (ops/keys).
 
 ---
@@ -17,10 +18,12 @@ in the background. A **deterministic onboarding state machine** walks a first-ti
 language → name → market/currency → KYC id → consent, then creates a wallet row. Once onboarded, a
 **message router** handles the user: a pending OTP or Confirm/Cancel is resolved **without the LLM**;
 otherwise free text goes to an **LLM intent parser** that returns validated JSON. Today the router can
-**check balance**, **add demo funds**, and run a **full P2P transfer** (confirmation card → OTP →
-double-entry ledger move → receipts to both parties). Everything else free-text falls back to an AI
-chat reply. **All money today moves on the internal Postgres ledger** — the newly-built Flutterwave
-(NGN) adapter is not yet called by any live path.
+**check balance**, **add demo funds**, run a **full P2P transfer**, and — via the **live NGN rail** —
+provision a **real NUBAN at onboarding**, **credit deposits** that land in it (funding webhook), and
+send a **bank transfer (NIP)** to any bank (name enquiry → OTP → payout → auto-refund on failure).
+**Voice notes** are transcribed (Groq/Deepgram) and flow through the same intent pipeline. Every money
+move is OTP-gated and recorded on the internal Postgres double-entry ledger; the Flutterwave adapter
+settles the external NGN legs. Free text that isn't an action falls back to an AI chat reply.
 
 ---
 
@@ -59,9 +62,9 @@ Cloudflare Tunnel ──► Traefik ──► NestJS API  (guildpay.guildserver.
                                           users · audit_events
 ```
 
-Supporting boundaries that exist but are **not yet on the live path**:
-`PartnerService → FlutterwavePartnerAdapter (NGN)` / `MockPartnerAdapter (QAR)` and
-`BillsService → FlutterwaveBillsAdapter`, plus `POST /webhooks/flutterwave`.
+The **NGN rail is now on the live path**: `PartnerService → FlutterwavePartnerAdapter` provisions
+NUBANs, resolves names, and settles NIP payouts; `POST /webhooks/flutterwave` credits funding +
+reconciles payouts. Still off-path: `MockPartnerAdapter (QAR)` and `BillsService → FlutterwaveBillsAdapter`.
 
 ---
 
@@ -74,19 +77,23 @@ Supporting boundaries that exist but are **not yet on the live path**:
 | Channel | Twilio sandbox adapter (fallback) | `channel/twilio-sandbox.adapter.ts` | ✅ Present |
 | Onboarding | State machine → wallet creation | `onboarding/onboarding.service.ts` | ✅ Live (KYC = format-only) |
 | Routing | Onboarded-user router | `banking/message-router.service.ts` | ✅ Live |
-| AI | Intent parser (zod-validated) | `banking/orchestrator.service.ts` | ✅ Live (balance/fund/p2p/support) |
+| AI | Intent parser (zod-validated) | `banking/orchestrator.service.ts` | ✅ Live (balance/fund/p2p/**bank_transfer**/support) |
 | AI | Multi-provider fallback (Groq→Gemini) | `ai/ai.service.ts` | ✅ Live |
-| Money | Double-entry ledger | `banking/wallet.service.ts` | ✅ Live |
+| Voice | STT (Groq/Deepgram) → intent pipeline | `stt/*`, `webhooks/whatsapp.controller.ts` | ✅ Live |
+| Money | Double-entry ledger (credit/debit/transfer) | `banking/wallet.service.ts` | ✅ Live |
 | Money | OTP gate (hashed, Postgres) | `banking/otp.service.ts` | ✅ Live |
 | Money | P2P transfer flow | `banking/transfer.service.ts` | ✅ Live |
+| Money | Bank transfer (NIP) flow | `banking/bank-transfer.service.ts` | ✅ Live |
+| NGN rail | Flutterwave partner adapter | `partner/flutterwave-partner.adapter.ts` | ✅ Live (NUBAN, name enquiry, NIP, verify) |
+| NGN rail | Funding + payout webhook | `webhooks/flutterwave.controller.ts` | ✅ Live (credit + reconcile, idempotent) |
 | Data | Postgres repos (users/wallets/txns/audit) | `database/*.repository.ts` | ✅ Live |
 | Data | Schema migrations | `supabase/migrations/*.sql` | ✅ Applied |
-| NGN rail | Flutterwave partner adapter | `partner/flutterwave-partner.adapter.ts` | 🟡 Built, **not wired** |
-| NGN rail | Flutterwave webhook routing | `webhooks/flutterwave.controller.ts` | 🟡 Verifies + routes + logs; **no ledger credit** |
-| QAR rail | Mock partner adapter | `partner/mock-partner.adapter.ts` | ⛔ Stub |
-| Bills | Flutterwave bills adapter | `bills/flutterwave-bills.adapter.ts` | ⛔ Stub |
-| Dashboard | Next.js admin | `apps/dashboard/app/*` | ⛔ Skeleton only |
-| Multimodal | Voice (Whisper), Vision (snap-to-pay) | — | ⛔ Not started |
+| QAR rail | Mock partner adapter | `partner/mock-partner.adapter.ts` | ⛔ Stub (QAR onboarding/P2P work ledger-only) |
+| Bills | Flutterwave bills adapter | `bills/flutterwave-bills.adapter.ts` | ⛔ Stub (P1) |
+| Vision | Snap-to-pay (invoice/QR → action) | — | ⛔ Not started (P2) |
+| Savings | Target savings sub-ledger | — | ⛔ Not started (P2) |
+| Dashboard | Next.js admin | `apps/dashboard/app/*` | ⛔ Skeleton only (P3) |
+| Support | AI support agent | — | ⛔ Not started (P3) |
 
 Legend: ✅ works end-to-end · 🟡 code exists but nothing calls it / partial · ⛔ stub or absent.
 
@@ -178,19 +185,22 @@ Free text that isn't a recognised intent (`intent = support/unknown`) is answere
 
 ---
 
-## 5. Built but NOT yet on the live path (the wiring gap)
+## 5. The live NGN rail (P0 — shipped)
 
-The Flutterwave NGN rail now **exists in code** but nothing in the runtime calls it:
+The Flutterwave NGN rail is wired end-to-end and deployed to production:
 
-- `FlutterwavePartnerAdapter` implements `createVirtualAccount` (permanent NUBAN + BVN),
-  `nameEnquiry`, `bankTransfer` (NIP), and `verifyTransaction` against Flutterwave v3.
-  → **Not invoked** by onboarding, the router, or any capability yet.
-- `POST /webhooks/flutterwave` verifies `verif-hash` and routes `charge.completed` /
-  `transfer.completed` / `bvn.verification.completed`, but the handlers **only log** —
-  crediting/debiting the ledger is marked `TODO(M2)`.
+- **NUBAN at onboarding** — on NGN consent, `OnboardingService` calls
+  `FlutterwavePartnerAdapter.createVirtualAccount` (permanent NUBAN + BVN), stores it on the wallet,
+  and shows the funding details. Failure is non-blocking (`virtual_account_failed` audit).
+- **Funding → credit** — `charge.completed` → `verifyTransaction` (re-verify at source) → match wallet
+  by `tx_ref` (== wallet reference) → `WalletService.credit` → WhatsApp alert. Idempotent on `flw_ref`;
+  unmatched deposits are audited (`funding_unmatched`), never blind-credited.
+- **Bank transfer (NIP)** — `bank_transfer` intent → resolve bank (`listBanks`) → `nameEnquiry` →
+  confirm card with resolved name → OTP → `WalletService.debit` → `bankTransfer` payout. Failed payout
+  reverses the debit; `transfer.completed` reconciles (confirm on success, refund on failure).
 
-**Consequence:** a user cannot yet (a) receive a real NUBAN at onboarding, (b) be funded by a real
-bank deposit, or (c) send to an external bank. Those need the wiring in §6.
+**Depends on (external):** live webhook configured in the Flutterwave dashboard, BVN + permanent-VA
+features enabled, and a funded merchant balance for outbound payouts. See `05 §1.5-live` / `§4`.
 
 ---
 
@@ -215,7 +225,7 @@ Transaction status lifecycle in use today:
 ## 7. Security invariants currently enforced
 
 - **`no-otp-no-money`** — only `OtpService.verify()` success leads to `WalletService.transfer()`.
-  The LLM prepares; it never completes. (Covered by the test suite; 23 tests green.)
+  The LLM prepares; it never completes — for both P2P and bank transfer. (38 tests green.)
 - **Webhook authenticity** — WhatsApp verifies `X-Hub-Signature-256`; Flutterwave verifies
   `verif-hash` (constant-time compare) before any processing.
 - **Atomic ledger** — debit is a single conditional `UPDATE … WHERE balance >= amount` that both locks
@@ -230,34 +240,29 @@ Transaction status lifecycle in use today:
 
 Ordered by what unblocks the most demo value. Mapped to `04_BUILD_PLAN.md` milestones.
 
-### P0 — make the NGN rail real (wire what's already built)
-1. **Provision a NUBAN at onboarding** — call `PartnerService.forCurrency('NGN').createVirtualAccount`
-   after consent (pass email + BVN + name), store `account_number`/`bank_name`, show it to the user so
-   they have somewhere to pay into. *(M2b)*
-2. **Credit the ledger from the funding webhook** — in `flutterwave.controller.ts` `charge.completed`:
-   `verifyTransaction(id)` → match amount/currency → `WalletService.credit` + `audit`. Add idempotency
-   on `flw_ref`. *(M2b)*
-3. **Bank transfer (NIP) capability** — add a `bank_transfer` intent + flow: `nameEnquiry` → show
-   resolved name in the confirm card → OTP → `bankTransfer` → reconcile on `transfer.completed`. *(M3b)*
+### ✅ P0 — the live NGN rail (DONE, in production)
+1. ~~Provision a NUBAN at onboarding~~ *(M2b)* — shipped.
+2. ~~Credit the ledger from the funding webhook (verified + idempotent)~~ *(M2b)* — shipped.
+3. ~~Bank transfer (NIP): name enquiry → OTP → payout → reconcile/refund~~ *(M3b)* — shipped.
 
-### P1 — the everyday-money capabilities the pitch promises
+### P1 — everyday-money capabilities (deferred by request)
 4. **Airtime / data** via `FlutterwaveBillsAdapter.buyAirtime/buyData` + router intents. *(M6a)*
 5. **Bill payments** (electricity/cable/betting): `validateCustomer` → pay → token/receipt. *(M6b)*
 6. **History / receipts** command + transaction list. *(M8)*
-7. Extend `no-otp-no-money` + `audit_events` coverage to every new money action.
 
 ### P2 — differentiators & second market
-8. **Voice** (media download → Whisper → same intent pipeline). *(M4)*
-9. **Snap-to-pay** (vision: invoice / bank details / meter / QR → prefilled action). *(M5)*
-10. **Savings / target-savings** sub-ledger + **Request money**. *(M9)*
-11. **QAR rail** — implement `MockPartnerAdapter` so Qatar onboarding + P2P is a first-class demo. *(M2)*
-12. **Real KYC/BVN** — replace format-only check with the consent flow OR validate-at-NUBAN-creation
+7. ~~**Voice** (media download → STT → same intent pipeline)~~ *(M4)* — shipped (Groq/Deepgram).
+8. **Snap-to-pay** (vision: invoice / bank details / meter / QR → prefilled action). *(M5)*
+9. **Savings / target-savings** sub-ledger + **Request money**. *(M9)*
+10. **QAR rail** — `MockPartnerAdapter` so Qatar has a first-class demo (onboarding + P2P already work
+    ledger-only; this adds a simulated account + funding). *(M2)*
+11. **Real KYC/BVN** — replace format-only check with the consent flow OR validate-at-NUBAN-creation
     (see `05 §1.5-live`); cross-check returned phone == WhatsApp number.
 
 ### P3 — operator surface & demo hardening
-13. **Dashboard** — Overview live feed, Transactions, Risk/OTP console, `/v1/demo/reset`. *(M11)*
-14. **Support agent** (FAQ + escalation) *(M10)*, reminder jobs, Pidgin/Arabic language pass.
-15. Rehearsals + demo video/screenshot pack. *(Week 4 checkpoint)*
+12. **Dashboard** — Overview live feed, Transactions, Risk/OTP console, `/v1/demo/reset`. *(M11)*
+13. **Support agent** (FAQ + escalation) *(M10)*, reminder jobs, Pidgin/Arabic language pass.
+14. Rehearsals + demo video/screenshot pack. *(Week 4 checkpoint)*
 
 ---
 
@@ -265,13 +270,13 @@ Ordered by what unblocks the most demo value. Mapped to `04_BUILD_PLAN.md` miles
 
 A single recorded run should show, with a demo reset between takes:
 
-1. New user onboards on WhatsApp (NGN) and receives a **real sandbox NUBAN**.
-2. A **real sandbox bank deposit** into that NUBAN credits the wallet (via webhook).
-3. A **P2P transfer** to another GuildPay user, OTP-gated, with receipts. ✅ *works today*
-4. A **bank transfer (NIP)** to an external account: name enquiry → confirm → OTP → payout → receipt.
-5. **Airtime** purchase and one **bill** payment, each OTP-gated with a receipt.
-6. At least one action driven by **voice** and one by **photo**.
-7. The **dashboard** reflects every action in real time; `no-otp-no-money` suite is green.
+1. New user onboards on WhatsApp (NGN) and receives a **real NUBAN**. ✅ *shipped*
+2. A **real bank deposit** into that NUBAN credits the wallet (via webhook). ✅ *shipped*
+3. A **P2P transfer** to another GuildPay user, OTP-gated, with receipts. ✅ *shipped*
+4. A **bank transfer (NIP)** to an external account: name enquiry → confirm → OTP → payout. ✅ *shipped*
+5. **Airtime** purchase and one **bill** payment, each OTP-gated with a receipt. ⬜ *P1*
+6. One action driven by **voice** ✅ *shipped* and one by **photo** ⬜ *P2 (snap-to-pay)*.
+7. The **dashboard** reflects every action in real time ⬜ *P3*; `no-otp-no-money` suite green ✅.
 
-**Today: item 3 is fully done; items 1–2 and 4–5 are one wiring layer away (code exists for the NGN
-rail); items 6–7 are net-new.**
+**Today: items 1–4 and the voice half of 6 are done and live. Remaining for the full demo: airtime/bill
+(P1), snap-to-pay photo (P2), and the dashboard (P3).**
