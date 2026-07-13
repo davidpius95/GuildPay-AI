@@ -125,20 +125,25 @@ export class AiService {
       ...history,
       { role: 'user', content: userMessage },
     ];
+    return this.complete(messages, opts);
+  }
 
+  /**
+   * Low-level completion with the same fallback chain, but no built-in system
+   * prompt — the caller supplies the full message list. Used by the orchestrator,
+   * which needs its own strict JSON-parser prompt.
+   */
+  async complete(messages: ChatMessage[], opts?: ChatOptions): Promise<string> {
     const errors: string[] = [];
-
     for (const provider of this.providers) {
       try {
-        const reply = await provider.chat(messages, opts);
-        return reply;
+        return await provider.chat(messages, opts);
       } catch (err) {
         const msg = (err as Error).message;
         this.logger.warn(`Provider "${provider.name}" failed: ${msg}`);
         errors.push(`${provider.name}: ${msg}`);
       }
     }
-
     const errorSummary = errors.join(' | ');
     this.logger.error(`All AI providers failed: ${errorSummary}`);
     throw new Error(`All AI providers failed: ${errorSummary}`);

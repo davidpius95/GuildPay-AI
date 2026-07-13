@@ -13,6 +13,8 @@ export interface WalletRow {
   status: string;
   virtual_account_number: string | null;
   virtual_bank_name: string | null;
+  daily_limit: string;
+  txn_limit: string;
   created_at: string;
 }
 
@@ -26,6 +28,14 @@ export class WalletsRepository {
       [userId],
     );
     return rows;
+  }
+
+  async findByReference(reference: string): Promise<WalletRow | null> {
+    const { rows } = await this.pool.query<WalletRow>(
+      'select * from public.wallets where reference = $1',
+      [reference],
+    );
+    return rows[0] ?? null;
   }
 
   async create(params: {

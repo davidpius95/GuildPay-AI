@@ -14,7 +14,7 @@ import type { Request } from 'express';
 import type { InboundMessage } from '@guildpay/shared';
 import { MetaCloudAdapter } from '../channel/meta-cloud.adapter';
 import { OnboardingService } from '../onboarding/onboarding.service';
-import { AiService } from '../ai/ai.service';
+import { MessageRouter } from '../banking/message-router.service';
 
 /**
  * WhatsApp webhook (Meta Cloud API).
@@ -30,7 +30,7 @@ export class WhatsappController {
   constructor(
     private readonly meta: MetaCloudAdapter,
     private readonly onboarding: OnboardingService,
-    private readonly ai: AiService,
+    private readonly router: MessageRouter,
   ) {}
 
   @Get()
@@ -71,19 +71,8 @@ export class WhatsappController {
       try {
         const handled = await this.onboarding.handle(msg);
         if (!handled) {
-          // Onboarded user — try AI chat, with a graceful message if all providers fail.
-          let reply: string;
-          if (msg.type === 'text' && msg.text) {
-            try {
-              reply = await this.ai.chat(msg.text);
-            } catch (err) {
-              this.logger.error(`AI chat failed entirely: ${(err as Error).message}`);
-              reply = 'Sorry, my AI systems are temporarily down. Try again shortly! 🛠️';
-            }
-          } else {
-            reply = `Got your ${msg.type} message — GuildPay is still learning to handle that. 🙂`;
-          }
-          await this.meta.send({ to: msg.waPhone, kind: 'text', body: reply });
+          // Onboarded user — hand off to the banking router (intent → capability).
+          await this.router.handle(msg);
         }
       } catch (err) {
         this.logger.error(`message handling failed: ${(err as Error).message}`);

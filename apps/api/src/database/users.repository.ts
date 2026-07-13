@@ -38,6 +38,19 @@ export class UsersRepository {
     return rows[0] ?? null;
   }
 
+  async findById(id: string): Promise<UserRow | null> {
+    const { rows } = await this.pool.query<UserRow>('select * from public.users where id = $1', [id]);
+    return rows[0] ?? null;
+  }
+
+  async findByAnyWaPhone(waPhones: string[]): Promise<UserRow | null> {
+    const { rows } = await this.pool.query<UserRow>(
+      'select * from public.users where wa_phone = any($1) limit 1',
+      [waPhones],
+    );
+    return rows[0] ?? null;
+  }
+
   /** Create a pending user at the first onboarding step (language). */
   async create(waPhone: string): Promise<UserRow> {
     const { rows } = await this.pool.query<UserRow>(

@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { PG_POOL } from './database.constants';
 import { UsersRepository } from './users.repository';
 import { WalletsRepository } from './wallets.repository';
+import { TransactionsRepository } from './transactions.repository';
 import { AuditRepository } from './audit.repository';
 
 /**
@@ -26,8 +27,9 @@ import { AuditRepository } from './audit.repository';
     },
     UsersRepository,
     WalletsRepository,
+    TransactionsRepository,
     AuditRepository,
   ],
-  exports: [PG_POOL, UsersRepository, WalletsRepository, AuditRepository],
+  exports: [PG_POOL, UsersRepository, WalletsRepository, TransactionsRepository, AuditRepository],
 })
 export class DatabaseModule {}
