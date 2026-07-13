@@ -6,6 +6,8 @@ import type { ChannelAdapter } from '../channel/channel-adapter';
 import { UsersRepository, type UserRow } from '../database/users.repository';
 import { WalletsRepository } from '../database/wallets.repository';
 import { AuditRepository } from '../database/audit.repository';
+import { PartnerService } from '../partner/partner.service';
+import type { CreateVirtualAccountResult } from '../partner/partner-adapter';
 
 const MARKET_CURRENCY: Record<Market, Currency> = { NG: 'NGN', QA: 'QAR' };
 const KYC_LABEL: Record<Market, string> = { NG: 'BVN', QA: 'QID' };
@@ -25,6 +27,7 @@ export class OnboardingService {
     private readonly users: UsersRepository,
     private readonly wallets: WalletsRepository,
     private readonly audit: AuditRepository,
+    private readonly partners: PartnerService,
   ) {}
 
   async handle(msg: InboundMessage): Promise<boolean> {
@@ -133,7 +136,17 @@ export class OnboardingService {
       metadata: { reference, currency },
     });
 
+    // NGN: provision a real virtual account (NUBAN) via the partner rail. Non-blocking:
+    // onboarding still completes if provisioning fails — the user can fund later.
+    const virtualAccount = market === 'NG' ? await this.provisionAccount(user, wallet.id, reference) : null;
+
     const symbol = CURRENCY_META[currency].symbol;
+    const fundingBlock = virtualAccount
+      ? `*Fund your wallet* — transfer to:\n` +
+        `Bank: ${virtualAccount.bankName}\n` +
+        `Account: ${virtualAccount.accountNumber}\n` +
+        `Name: ${user.full_name ?? 'GuildPay user'}\n\n`
+      : '';
     await this.text(
       user.wa_phone,
       `🎉 You're all set, ${user.full_name ?? 'there'}!\n\n` +
@@ -141,9 +154,53 @@ export class OnboardingService {
         `Reference: ${reference}\n` +
         `Currency: ${currency}\n` +
         `Balance: ${symbol}0.00\n\n` +
+        fundingBlock +
         `You can now fund your wallet, send money, buy airtime and pay bills — just tell me what you need. 💬`,
     );
     return true;
+  }
+
+  /** Create + persist a NUBAN. Errors are logged/audited but never block onboarding. */
+  private async provisionAccount(
+    user: UserRow,
+    walletId: string,
+    reference: string,
+  ): Promise<CreateVirtualAccountResult | null> {
+    const [firstName, ...rest] = (user.full_name ?? '').trim().split(/\s+/);
+    try {
+      const account = await this.partners.forCurrency('NGN').createVirtualAccount({
+        userRef: reference,
+        email: this.syntheticEmail(user.wa_phone),
+        firstName: firstName || undefined,
+        lastName: rest.join(' ') || firstName || undefined,
+        phone: user.wa_phone,
+        bvn: user.kyc_id ?? undefined,
+      });
+      await this.wallets.setVirtualAccount(walletId, account.accountNumber, account.bankName);
+      // Never log/audit the full account number or BVN.
+      await this.audit.record({
+        userId: user.id,
+        action: 'virtual_account_created',
+        entity: 'wallet',
+        entityId: walletId,
+        metadata: { bank: account.bankName },
+      });
+      return account;
+    } catch (err) {
+      this.logger.error(`NUBAN provisioning failed for wallet ${walletId}: ${(err as Error).message}`);
+      await this.audit.record({
+        userId: user.id,
+        action: 'virtual_account_failed',
+        entity: 'wallet',
+        entityId: walletId,
+      });
+      return null;
+    }
+  }
+
+  /** Flutterwave requires an email for virtual accounts; users don't give one, so derive a stable one. */
+  private syntheticEmail(waPhone: string): string {
+    return `${waPhone.replace(/\D/g, '')}@wallet.guildpay.ai`;
   }
 
   // ── prompts / send helpers ──────────────────────────────────────────────────

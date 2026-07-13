@@ -52,4 +52,14 @@ export class WalletsRepository {
     );
     return rows[0]!;
   }
+
+  /** Attach a provisioned virtual account (NUBAN) to a wallet after partner creation. */
+  async setVirtualAccount(walletId: string, accountNumber: string, bankName: string): Promise<void> {
+    await this.pool.query(
+      `update public.wallets
+         set virtual_account_number = $1, virtual_bank_name = $2
+       where id = $3`,
+      [accountNumber, bankName, walletId],
+    );
+  }
 }

@@ -5,6 +5,7 @@ import type { ChannelAdapter, OutboundMessage } from '../channel/channel-adapter
 import type { UserRow, UsersRepository } from '../database/users.repository';
 import type { WalletsRepository } from '../database/wallets.repository';
 import type { AuditRepository } from '../database/audit.repository';
+import type { PartnerService } from '../partner/partner.service';
 
 function baseUser(waPhone: string): UserRow {
   return {
@@ -40,6 +41,7 @@ function harness() {
 
   const wallets = {
     create: vi.fn(async (p: { reference: string }) => ({ id: 'w1', reference: p.reference })),
+    setVirtualAccount: vi.fn(async () => undefined),
   } as unknown as WalletsRepository;
 
   const audit = { record: vi.fn(async () => undefined) } as unknown as AuditRepository;
@@ -49,8 +51,17 @@ function harness() {
     }),
   } as unknown as ChannelAdapter;
 
-  const svc = new OnboardingService(channel, users, wallets, audit);
-  return { svc, sent, users, wallets };
+  const createVirtualAccount = vi.fn(async () => ({
+    accountNumber: '9900001111',
+    bankName: 'Wema Bank',
+    providerRef: 'flw_ref_1',
+  }));
+  const partners = {
+    forCurrency: vi.fn(() => ({ createVirtualAccount })),
+  } as unknown as PartnerService;
+
+  const svc = new OnboardingService(channel, users, wallets, audit, partners);
+  return { svc, sent, users, wallets, partners, createVirtualAccount };
 }
 
 function msg(over: Partial<InboundMessage>): InboundMessage {
@@ -90,8 +101,11 @@ describe('OnboardingService', () => {
     const handled = await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'consent_yes' }));
     expect(handled).toBe(true);
     expect(h.wallets.create).toHaveBeenCalledOnce();
+    expect(h.createVirtualAccount).toHaveBeenCalledOnce(); // NGN provisions a NUBAN
     expect(last(h.sent).body).toContain("all set");
     expect(last(h.sent).body).toContain('GPA-NG-');
+    expect(last(h.sent).body).toContain('9900001111'); // funding account shown
+    expect(last(h.sent).body).toContain('Wema Bank');
   });
 
   it('returns false (not handled) once onboarded', async () => {
