@@ -5,6 +5,6 @@ import { FlutterwavePartnerAdapter } from './flutterwave-partner.adapter';
 
 @Module({
   providers: [PartnerService, MockPartnerAdapter, FlutterwavePartnerAdapter],
-  exports: [PartnerService],
+  exports: [PartnerService, FlutterwavePartnerAdapter],
 })
 export class PartnerModule {}

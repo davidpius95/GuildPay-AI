@@ -36,12 +36,13 @@ export class TransactionsRepository {
     recipientRef?: string | null;
     purpose?: string | null;
     aiExtraction?: unknown;
+    providerRef?: string | null;
     status?: string;
   }): Promise<TransactionRow> {
     const { rows } = await this.pool.query<TransactionRow>(
       `insert into public.transactions
-         (wallet_id, type, channel, currency, amount, recipient_name, recipient_ref, purpose, ai_extraction, status)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,coalesce($10,'draft'))
+         (wallet_id, type, channel, currency, amount, recipient_name, recipient_ref, purpose, ai_extraction, provider_ref, status)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11,'draft'))
        returning *`,
       [
         params.walletId,
@@ -53,10 +54,20 @@ export class TransactionsRepository {
         params.recipientRef ?? null,
         params.purpose ?? null,
         params.aiExtraction ? JSON.stringify(params.aiExtraction) : null,
+        params.providerRef ?? null,
         params.status ?? null,
       ],
     );
     return rows[0]!;
+  }
+
+  /** Idempotency: has a transaction already recorded this provider (Flutterwave) reference? */
+  async findByProviderRef(providerRef: string): Promise<TransactionRow | null> {
+    const { rows } = await this.pool.query<TransactionRow>(
+      'select * from public.transactions where provider_ref = $1 limit 1',
+      [providerRef],
+    );
+    return rows[0] ?? null;
   }
 
   async findById(id: string): Promise<TransactionRow | null> {
