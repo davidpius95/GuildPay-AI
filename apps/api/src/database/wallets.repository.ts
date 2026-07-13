@@ -30,6 +30,11 @@ export class WalletsRepository {
     return rows;
   }
 
+  async findById(id: string): Promise<WalletRow | null> {
+    const { rows } = await this.pool.query<WalletRow>('select * from public.wallets where id = $1', [id]);
+    return rows[0] ?? null;
+  }
+
   async findByReference(reference: string): Promise<WalletRow | null> {
     const { rows } = await this.pool.query<WalletRow>(
       'select * from public.wallets where reference = $1',

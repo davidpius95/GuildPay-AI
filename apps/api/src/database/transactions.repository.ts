@@ -34,6 +34,7 @@ export class TransactionsRepository {
     amount: number;
     recipientName?: string | null;
     recipientRef?: string | null;
+    bankCode?: string | null;
     purpose?: string | null;
     aiExtraction?: unknown;
     providerRef?: string | null;
@@ -41,8 +42,8 @@ export class TransactionsRepository {
   }): Promise<TransactionRow> {
     const { rows } = await this.pool.query<TransactionRow>(
       `insert into public.transactions
-         (wallet_id, type, channel, currency, amount, recipient_name, recipient_ref, purpose, ai_extraction, provider_ref, status)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11,'draft'))
+         (wallet_id, type, channel, currency, amount, recipient_name, recipient_ref, bank_code, purpose, ai_extraction, provider_ref, status)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,coalesce($12,'draft'))
        returning *`,
       [
         params.walletId,
@@ -52,6 +53,7 @@ export class TransactionsRepository {
         params.amount,
         params.recipientName ?? null,
         params.recipientRef ?? null,
+        params.bankCode ?? null,
         params.purpose ?? null,
         params.aiExtraction ? JSON.stringify(params.aiExtraction) : null,
         params.providerRef ?? null,

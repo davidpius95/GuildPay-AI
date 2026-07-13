@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Currency, NameEnquiryResult } from '@guildpay/shared';
 import type {
   BalanceResult,
+  Bank,
   BankTransferRequest,
   CreateVirtualAccountRequest,
   CreateVirtualAccountResult,
@@ -22,6 +23,10 @@ export class MockPartnerAdapter implements PartnerAdapter {
 
   async createVirtualAccount(_req: CreateVirtualAccountRequest): Promise<CreateVirtualAccountResult> {
     throw new Error(NOT_YET);
+  }
+
+  async listBanks(): Promise<Bank[]> {
+    throw new Error('QAR has no external bank rail (bank list is NGN-only).');
   }
 
   async nameEnquiry(_accountNumber: string, _bankCode: string): Promise<NameEnquiryResult> {

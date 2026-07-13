@@ -10,6 +10,7 @@ import { AuditRepository } from '../database/audit.repository';
 import { WalletService } from './wallet.service';
 import { OrchestratorService } from './orchestrator.service';
 import { TransferService } from './transfer.service';
+import { BankTransferService } from './bank-transfer.service';
 import { formatMoney } from './money';
 
 /**
@@ -29,6 +30,7 @@ export class MessageRouter {
     private readonly wallet: WalletService,
     private readonly orchestrator: OrchestratorService,
     private readonly transfer: TransferService,
+    private readonly bankTransfer: BankTransferService,
   ) {}
 
   async handle(msg: InboundMessage): Promise<void> {
@@ -43,17 +45,19 @@ export class MessageRouter {
     // ── deterministic: awaiting an OTP ──────────────────────────────────────
     const pendingOtp = await this.txns.findLatestByStatus(wallet.id, ['pending_otp']);
     if (pendingOtp) {
-      if (lower === 'cancel') return this.transfer.cancel(user, pendingOtp);
-      if (/^\d{4,8}$/.test(text)) return this.transfer.submitOtp(user, wallet, text);
+      const svc = pendingOtp.type === 'bank_transfer' ? this.bankTransfer : this.transfer;
+      if (lower === 'cancel') return svc.cancel(user, pendingOtp);
+      if (/^\d{4,8}$/.test(text)) return svc.submitOtp(user, wallet, text);
       return this.send(user, 'Please reply with the code I sent, or type *CANCEL*.');
     }
 
     // ── deterministic: awaiting Confirm/Cancel ──────────────────────────────
     const pendingConf = await this.txns.findLatestByStatus(wallet.id, ['pending_confirmation']);
     if (pendingConf) {
-      if (msg.interactiveReplyId === 'txn_confirm') return this.transfer.confirm(user, pendingConf);
+      const svc = pendingConf.type === 'bank_transfer' ? this.bankTransfer : this.transfer;
+      if (msg.interactiveReplyId === 'txn_confirm') return svc.confirm(user, pendingConf);
       if (msg.interactiveReplyId === 'txn_cancel' || lower === 'cancel') {
-        return this.transfer.cancel(user, pendingConf);
+        return svc.cancel(user, pendingConf);
       }
       return this.send(user, 'Please tap *Confirm* or *Cancel* to continue.');
     }
@@ -82,6 +86,18 @@ export class MessageRouter {
           !intent.amount
             ? 'How much would you like to send?'
             : 'Who should I send it to? Share their number or GuildPay reference.',
+        );
+      case 'bank_transfer':
+        if (intent.amount && intent.accountNumber && intent.bankName) {
+          return this.bankTransfer.start(user, wallet, intent.amount, intent.accountNumber, intent.bankName);
+        }
+        return this.send(
+          user,
+          !intent.amount
+            ? 'How much would you like to send?'
+            : !intent.accountNumber
+              ? "What's the account number?"
+              : 'Which bank is that account with?',
         );
       default:
         try {

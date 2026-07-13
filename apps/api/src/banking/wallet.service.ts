@@ -26,6 +26,41 @@ export class WalletService {
     return rows[0]?.balance ?? '0';
   }
 
+  /**
+   * Debit a wallet for an external payout (NIP). Atomic: the conditional update both
+   * locks the row and enforces sufficient funds. No counterparty wallet — money leaves
+   * the system, so a single debit ledger entry is written. Reverse with credit() on failure.
+   */
+  async debit(walletId: string, amount: number, transactionId: string): Promise<string> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const { rows, rowCount } = await client.query<{ balance: string }>(
+        'update public.wallets set balance = balance - $1 where id = $2 and balance >= $1 returning balance',
+        [amount, walletId],
+      );
+      if (rowCount === 0) {
+        await client.query('rollback');
+        throw new InsufficientFundsError();
+      }
+      const balanceAfter = rows[0]!.balance;
+      await client.query(
+        `insert into public.ledger_entries (transaction_id, wallet_id, direction, amount, balance_after)
+         values ($1, $2, 'debit', $3, $4)`,
+        [transactionId, walletId, amount, balanceAfter],
+      );
+      await client.query('commit');
+      return balanceAfter;
+    } catch (err) {
+      if ((err as Error).name !== 'InsufficientFundsError') {
+        await client.query('rollback').catch(() => undefined);
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   /** Credit a wallet (e.g. demo funding). Atomic: balance + ledger entry. */
   async credit(walletId: string, amount: number, transactionId: string): Promise<string> {
     const client = await this.pool.connect();

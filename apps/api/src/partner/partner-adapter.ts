@@ -52,12 +52,20 @@ export interface BalanceResult {
   balance: number;
 }
 
+export interface Bank {
+  code: string;
+  name: string;
+}
+
 export interface PartnerAdapter {
   /** Currency rail this adapter settles. */
   readonly currency: Currency;
 
   /** Provision the account a user funds into (NUBAN for NGN; simulated ref for QAR). */
   createVirtualAccount(req: CreateVirtualAccountRequest): Promise<CreateVirtualAccountResult>;
+
+  /** List banks for this rail (NGN), so a bank name can be resolved to its NIP code. */
+  listBanks(): Promise<Bank[]>;
 
   /** Resolve the account holder's name before a payout. Never transfer without this. */
   nameEnquiry(accountNumber: string, bankCode: string): Promise<NameEnquiryResult>;

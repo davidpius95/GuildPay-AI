@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Currency, NameEnquiryResult } from '@guildpay/shared';
 import type {
   BalanceResult,
+  Bank,
   BankTransferRequest,
   CreateVirtualAccountRequest,
   CreateVirtualAccountResult,
@@ -61,6 +62,12 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter {
       bankName: data.bank_name,
       providerRef: data.order_ref ?? data.flw_ref ?? req.userRef,
     };
+  }
+
+  /** List NGN banks (code + name) for resolving a bank name to its NIP code. */
+  async listBanks(): Promise<Bank[]> {
+    const data = await this.flw<Array<{ code: string; name: string }>>('GET', '/banks/NG');
+    return data.map((b) => ({ code: b.code, name: b.name }));
   }
 
   /** Resolve the account holder's name before a payout (NIP name enquiry). */

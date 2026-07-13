@@ -30,6 +30,7 @@ interface FlwWebhook {
     status?: string;
     tx_ref?: string;
     flw_ref?: string;
+    reference?: string;
     amount?: number;
     currency?: string;
   };
@@ -79,8 +80,7 @@ export class FlutterwaveController {
           await this.handleChargeCompleted(body.data ?? {});
           break;
         case 'transfer.completed':
-          // TODO(M3b): reconcile payout by reference; on FAILED, Flutterwave auto-reverses.
-          this.logger.log(`transfer.completed ref=${body.data?.tx_ref ?? '—'} status=${body.data?.status}`);
+          await this.handleTransferCompleted(body.data ?? {});
           break;
         case 'bvn.verification.completed':
           this.logger.log(`bvn.verification.completed status=${body.data?.status}`);
@@ -159,6 +159,45 @@ export class FlutterwaveController {
       });
     }
     this.logger.log(`wallet ${wallet.reference} funded ${amount} ${currency} (flw_ref=${flwRef})`);
+  }
+
+  /** Reconcile a NIP payout: confirm on success, reverse the debit on failure (idempotent). */
+  private async handleTransferCompleted(data: NonNullable<FlwWebhook['data']>): Promise<void> {
+    const ref = (data.reference ?? '').trim(); // we sent reference = our transaction id
+    if (!ref) return;
+    const txn = await this.txns.findById(ref);
+    if (!txn || txn.type !== 'bank_transfer') {
+      this.logger.log(`transfer.completed ref=${ref} — no matching bank_transfer txn`);
+      return;
+    }
+    const status = (data.status ?? '').toUpperCase();
+    if (status === 'SUCCESSFUL') {
+      if (txn.status !== 'completed') await this.txns.setStatus(txn.id, 'completed');
+      this.logger.log(`transfer ${txn.id} confirmed successful`);
+      return;
+    }
+    if (status !== 'FAILED') return;
+    if (txn.status === 'failed') return; // already reversed
+
+    const amount = Number(txn.amount);
+    await this.wallet.credit(txn.wallet_id, amount, txn.id); // refund the earlier debit
+    await this.txns.setStatus(txn.id, 'failed');
+    await this.audit.record({
+      action: 'bank_transfer_reversed',
+      entity: 'transaction',
+      entityId: txn.id,
+      metadata: { amount },
+    });
+    const wallet = await this.wallets.findById(txn.wallet_id);
+    const user = wallet ? await this.users.findById(wallet.user_id) : null;
+    if (wallet && user) {
+      await this.channel.send({
+        to: user.wa_phone,
+        kind: 'text',
+        body: `↩️ Your transfer of ${formatMoney(wallet.currency as Currency, amount)} to ${txn.recipient_name} failed and was refunded.`,
+      });
+    }
+    this.logger.log(`transfer ${txn.id} failed — reversed ${amount}`);
   }
 }
 

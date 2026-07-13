@@ -2,11 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { AiService } from '../ai/ai.service';
 
-/** Intents the M3 orchestrator can route (subset of the full catalogue). */
+/** Intents the orchestrator can route (subset of the full catalogue). */
 export const IntentResultSchema = z.object({
-  intent: z.enum(['balance', 'fund', 'p2p_transfer', 'support', 'unknown']),
+  intent: z.enum(['balance', 'fund', 'p2p_transfer', 'bank_transfer', 'support', 'unknown']),
   amount: z.number().positive().nullable().default(null),
-  recipientRef: z.string().min(1).nullable().default(null), // phone number or GuildPay ref
+  recipientRef: z.string().min(1).nullable().default(null), // phone number or GuildPay ref (p2p)
+  accountNumber: z.string().min(1).nullable().default(null), // 10-digit NUBAN (bank_transfer)
+  bankName: z.string().min(1).nullable().default(null), // bank name text (bank_transfer)
   purpose: z.string().nullable().default(null),
   confidence: z.number().min(0).max(1).default(0.5),
 });
@@ -14,13 +16,17 @@ export type IntentResult = z.infer<typeof IntentResultSchema>;
 
 const SYSTEM = `You are the intent parser for GuildPay, a WhatsApp money assistant.
 Read the user's message and output ONLY a JSON object (no prose, no markdown) with keys:
-- "intent": one of "balance", "fund", "p2p_transfer", "support", "unknown".
+- "intent": one of "balance", "fund", "p2p_transfer", "bank_transfer", "support", "unknown".
 - "amount": the money amount as a number, or null if not clearly stated.
-- "recipientRef": the recipient's phone number or GuildPay reference for a transfer, else null.
+- "recipientRef": the recipient's phone number or GuildPay reference for a P2P transfer, else null.
+- "accountNumber": the destination bank account number (10 digits) for a bank transfer, else null.
+- "bankName": the destination bank's name for a bank transfer, else null.
 - "purpose": short reason for the payment, or null.
 - "confidence": 0 to 1.
-Rules: NEVER invent an amount or recipient — use null when unsure. "balance" = checking balance.
-"fund" = adding money to their own wallet. "p2p_transfer" = sending money to someone.
+Rules: NEVER invent an amount, recipient, account number, or bank — use null when unsure.
+"balance" = checking balance. "fund" = adding money to their own wallet.
+"p2p_transfer" = sending to another GuildPay user (phone/GuildPay ref).
+"bank_transfer" = sending to a bank account number at a named bank (NIP).
 Greetings, questions, or anything else = "support".`;
 
 /**
