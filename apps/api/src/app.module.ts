@@ -5,6 +5,7 @@ import { HealthController } from './health/health.controller';
 import { DatabaseModule } from './database/database.module';
 import { ChannelModule } from './channel/channel.module';
 import { AiModule } from './ai/ai.module';
+import { SttModule } from './stt/stt.module';
 import { PartnerModule } from './partner/partner.module';
 import { BillsModule } from './bills/bills.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -33,6 +34,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     DatabaseModule,
     ChannelModule,
     AiModule,
+    SttModule,
     PartnerModule,
     BillsModule,
     WebhooksModule,

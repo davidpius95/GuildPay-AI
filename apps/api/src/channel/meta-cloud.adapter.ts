@@ -127,6 +127,39 @@ export class MetaCloudAdapter implements ChannelAdapter {
     }
   }
 
+  /**
+   * Download a media file from WhatsApp given its media ID.
+   * Returns the binary buffer and its mime type.
+   */
+  async downloadMedia(mediaId: string): Promise<{ buffer: Buffer; mimeType: string }> {
+    const token = this.config.get<string>('META_WHATSAPP_TOKEN');
+    if (!token) throw new Error('META_WHATSAPP_TOKEN not set');
+
+    // 1. Get the media URL from the Graph API
+    const metadataUrl = `https://graph.facebook.com/${this.graphVersion}/${mediaId}`;
+    const metaRes = await fetch(metadataUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!metaRes.ok) {
+      throw new Error(`Failed to fetch media metadata: ${await metaRes.text()}`);
+    }
+    const metadata = (await metaRes.json()) as { url: string; mime_type: string };
+
+    // 2. Download the actual binary data from the returned URL
+    const mediaRes = await fetch(metadata.url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!mediaRes.ok) {
+      throw new Error(`Failed to download media binary: ${await mediaRes.text()}`);
+    }
+    
+    const arrayBuffer = await mediaRes.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      mimeType: metadata.mime_type,
+    };
+  }
+
   private buildBody(message: OutboundMessage): Record<string, unknown> {
     const base = { messaging_product: 'whatsapp', recipient_type: 'individual', to: message.to };
     if (message.kind === 'interactive') {

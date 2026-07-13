@@ -15,6 +15,7 @@ import type { InboundMessage } from '@guildpay/shared';
 import { MetaCloudAdapter } from '../channel/meta-cloud.adapter';
 import { OnboardingService } from '../onboarding/onboarding.service';
 import { MessageRouter } from '../banking/message-router.service';
+import { SttService } from '../stt/stt.service';
 
 /**
  * WhatsApp webhook (Meta Cloud API).
@@ -31,6 +32,7 @@ export class WhatsappController {
     private readonly meta: MetaCloudAdapter,
     private readonly onboarding: OnboardingService,
     private readonly router: MessageRouter,
+    private readonly stt: SttService,
   ) {}
 
   @Get()
@@ -71,7 +73,28 @@ export class WhatsappController {
       try {
         const handled = await this.onboarding.handle(msg);
         if (!handled) {
-          // Onboarded user — hand off to the banking router (intent → capability).
+          // Onboarded user — if it's an audio note, transcribe it first
+          if (msg.type === 'audio' && msg.mediaId) {
+            try {
+              const { buffer, mimeType } = await this.meta.downloadMedia(msg.mediaId);
+              const transcript = await this.stt.transcribe(buffer, mimeType);
+              this.logger.log(`Transcribed voice note to: "${transcript}"`);
+              
+              // Mutate the message into a text message for the router
+              msg.type = 'text';
+              msg.text = transcript;
+            } catch (sttErr) {
+              this.logger.error(`STT transcription failed: ${(sttErr as Error).message}`);
+              await this.meta.send({
+                to: msg.waPhone,
+                kind: 'text',
+                body: 'Sorry, I had trouble hearing that voice note. Could you type it instead? 🎤',
+              });
+              return; // Halt processing for this message
+            }
+          }
+
+          // Hand off to the banking router (intent → capability).
           await this.router.handle(msg);
         }
       } catch (err) {
