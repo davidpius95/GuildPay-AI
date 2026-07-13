@@ -94,6 +94,22 @@ export class WhatsappController {
             }
           }
 
+          // Snap-to-pay: a photo → vision prefills a bank transfer.
+          if (msg.type === 'image' && msg.mediaId) {
+            try {
+              const { buffer, mimeType } = await this.meta.downloadMedia(msg.mediaId);
+              await this.router.handleImage(msg, buffer, mimeType);
+            } catch (imgErr) {
+              this.logger.error(`snap-to-pay failed: ${(imgErr as Error).message}`);
+              await this.meta.send({
+                to: msg.waPhone,
+                kind: 'text',
+                body: "I couldn't read that image. You can type the details instead, e.g. *send 5000 to 0690000031 Access Bank*.",
+              });
+            }
+            continue; // handled this message
+          }
+
           // Hand off to the banking router (intent → capability).
           await this.router.handle(msg);
         }

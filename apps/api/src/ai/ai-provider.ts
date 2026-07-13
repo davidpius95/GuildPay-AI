@@ -4,10 +4,15 @@
  * The AiService orchestrator calls them in fallback order.
  */
 
+/** A multimodal content part (OpenAI-compatible: text or an image data/URL). */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 /** A single message in the chat history (OpenAI-compatible shape). */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ContentPart[];
 }
 
 /** Options forwarded to the provider's chat endpoint. */

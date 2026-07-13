@@ -149,8 +149,55 @@ export class AiService {
     throw new Error(`All AI providers failed: ${errorSummary}`);
   }
 
+  /**
+   * Vision completion — like complete(), but only across vision-capable providers
+   * (Groq's text model can't see images). Used by snap-to-pay.
+   */
+  async completeVision(messages: ChatMessage[], opts?: ChatOptions): Promise<string> {
+    const providers = this.providers.filter((p) => VISION_CAPABLE.has(p.name));
+    if (providers.length === 0) {
+      throw new Error('No vision-capable AI provider configured (add gemini/openai to AI_PROVIDER_ORDER).');
+    }
+    const errors: string[] = [];
+    for (const provider of providers) {
+      try {
+        return await provider.chat(messages, opts);
+      } catch (err) {
+        const msg = (err as Error).message;
+        this.logger.warn(`Vision provider "${provider.name}" failed: ${msg}`);
+        errors.push(`${provider.name}: ${msg}`);
+      }
+    }
+    throw new Error(`All vision providers failed: ${errors.join(' | ')}`);
+  }
+
+  /** Build a multimodal message (text + image data URI) and run a vision completion. */
+  async extractFromImage(
+    image: Buffer,
+    mimeType: string,
+    system: string,
+    userText: string,
+    opts?: ChatOptions,
+  ): Promise<string> {
+    const dataUri = `data:${mimeType};base64,${image.toString('base64')}`;
+    const messages: ChatMessage[] = [
+      { role: 'system', content: system },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: userText },
+          { type: 'image_url', image_url: { url: dataUri } },
+        ],
+      },
+    ];
+    return this.completeVision(messages, opts);
+  }
+
   /** Returns the names of currently active providers (for health/debug). */
   getActiveProviders(): string[] {
     return this.providers.map((p) => p.name);
   }
 }
+
+/** Providers that accept image content parts (OpenAI-compatible vision). */
+const VISION_CAPABLE = new Set(['gemini', 'openai', 'openrouter']);

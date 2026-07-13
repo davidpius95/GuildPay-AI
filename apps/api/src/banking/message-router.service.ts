@@ -11,6 +11,7 @@ import { WalletService } from './wallet.service';
 import { OrchestratorService } from './orchestrator.service';
 import { TransferService } from './transfer.service';
 import { BankTransferService } from './bank-transfer.service';
+import { SnapToPayService } from './snap-to-pay.service';
 import { formatMoney } from './money';
 
 /**
@@ -31,7 +32,17 @@ export class MessageRouter {
     private readonly orchestrator: OrchestratorService,
     private readonly transfer: TransferService,
     private readonly bankTransfer: BankTransferService,
+    private readonly snapToPay: SnapToPayService,
   ) {}
+
+  /** Snap-to-pay: an onboarded user sent a photo. Vision prefills a bank transfer. */
+  async handleImage(msg: InboundMessage, image: Buffer, mimeType: string): Promise<void> {
+    const user = await this.users.findByWaPhone(msg.waPhone);
+    if (!user) return;
+    const wallet = (await this.wallets.findByUserId(user.id))[0];
+    if (!wallet) return this.send(user, 'Your wallet is not set up yet. Send "hi" to finish onboarding.');
+    await this.snapToPay.fromImage(user, wallet, image, mimeType);
+  }
 
   async handle(msg: InboundMessage): Promise<void> {
     const user = await this.users.findByWaPhone(msg.waPhone);

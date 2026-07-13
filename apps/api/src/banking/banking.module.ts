@@ -7,6 +7,7 @@ import { OtpService } from './otp.service';
 import { OrchestratorService } from './orchestrator.service';
 import { TransferService } from './transfer.service';
 import { BankTransferService } from './bank-transfer.service';
+import { SnapToPayService } from './snap-to-pay.service';
 import { MessageRouter } from './message-router.service';
 
 /**
@@ -22,6 +23,7 @@ import { MessageRouter } from './message-router.service';
     OrchestratorService,
     TransferService,
     BankTransferService,
+    SnapToPayService,
     MessageRouter,
   ],
   exports: [MessageRouter, WalletService, OtpService],
