@@ -13,6 +13,7 @@ import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { MetaCloudAdapter } from '../channel/meta-cloud.adapter';
 import { OnboardingService } from '../onboarding/onboarding.service';
+import { AiService } from '../ai/ai.service';
 
 /**
  * WhatsApp webhook (Meta Cloud API).
@@ -28,6 +29,7 @@ export class WhatsappController {
   constructor(
     private readonly meta: MetaCloudAdapter,
     private readonly onboarding: OnboardingService,
+    private readonly ai: AiService,
   ) {}
 
   @Get()
@@ -58,11 +60,18 @@ export class WhatsappController {
       try {
         const handled = await this.onboarding.handle(msg);
         if (!handled) {
-          // Onboarded user — placeholder until the AI orchestrator (M3) lands.
-          const reply =
-            msg.type === 'text' && msg.text
-              ? `You said: "${msg.text}"`
-              : `Got your ${msg.type} message — GuildPay is still learning to handle that. 🙂`;
+          // Onboarded user — try AI chat first, fallback to hardcoded if AI fails completely
+          let reply: string;
+          if (msg.type === 'text' && msg.text) {
+            try {
+              reply = await this.ai.chat(msg.text);
+            } catch (err) {
+              this.logger.error(`AI chat failed entirely: ${(err as Error).message}`);
+              reply = 'Sorry, my AI systems are temporarily down. Try again shortly! 🛠️';
+            }
+          } else {
+            reply = `Got your ${msg.type} message — GuildPay is still learning to handle that. 🙂`;
+          }
           await this.meta.send({ to: msg.waPhone, kind: 'text', body: reply });
         }
       } catch (err) {
