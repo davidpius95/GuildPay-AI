@@ -46,7 +46,13 @@ describe('MetaCloudAdapter.parseInbound', () => {
             {
               value: {
                 messages: [
-                  { from: '2348012345678', timestamp: '123', type: 'text', text: { body: 'hi' } },
+                  {
+                    id: 'wamid.HI',
+                    from: '2348012345678',
+                    timestamp: '123',
+                    type: 'text',
+                    text: { body: 'hi' },
+                  },
                 ],
               },
             },
@@ -57,7 +63,13 @@ describe('MetaCloudAdapter.parseInbound', () => {
     };
     const msgs = a.parseInbound(payload);
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toMatchObject({ channel: 'meta', waPhone: '2348012345678', type: 'text', text: 'hi' });
+    expect(msgs[0]).toMatchObject({
+      channel: 'meta',
+      messageId: 'wamid.HI',
+      waPhone: '2348012345678',
+      type: 'text',
+      text: 'hi',
+    });
   });
 
   it('maps an interactive button reply', () => {

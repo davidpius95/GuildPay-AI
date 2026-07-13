@@ -50,6 +50,7 @@ export class MetaCloudAdapter implements ChannelAdapter {
         for (const m of value?.messages ?? []) {
           out.push({
             channel: 'meta',
+            messageId: m.id,
             waPhone: m.from,
             type: this.mapType(m.type),
             text: m.text?.body ?? m.button?.text,
@@ -79,6 +80,30 @@ export class MetaCloudAdapter implements ChannelAdapter {
         return 'interactive';
       default:
         return 'text';
+    }
+  }
+
+  /**
+   * Show the "typing…" indicator (and mark the message read) while we compose a
+   * reply. Lasts up to 25s or until the next message is sent. Best-effort.
+   */
+  async showTyping(messageId: string): Promise<void> {
+    const token = this.config.get<string>('META_WHATSAPP_TOKEN');
+    const phoneNumberId = this.config.get<string>('META_PHONE_NUMBER_ID');
+    if (!token || !phoneNumberId) return;
+    const url = `https://graph.facebook.com/${this.graphVersion}/${phoneNumberId}/messages`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId,
+        typing_indicator: { type: 'text' },
+      }),
+    });
+    if (!res.ok) {
+      this.logger.warn(`typing indicator failed (${res.status}): ${await res.text()}`);
     }
   }
 
@@ -135,6 +160,7 @@ interface MetaWebhookBody {
   }[];
 }
 interface MetaMessage {
+  id?: string;
   from: string;
   timestamp?: string;
   type?: string;

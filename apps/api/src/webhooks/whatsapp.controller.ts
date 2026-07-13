@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
+import type { InboundMessage } from '@guildpay/shared';
 import { MetaCloudAdapter } from '../channel/meta-cloud.adapter';
 import { OnboardingService } from '../onboarding/onboarding.service';
 import { AiService } from '../ai/ai.service';
@@ -46,21 +47,31 @@ export class WhatsappController {
 
   @Post()
   @HttpCode(200)
-  async receive(
-    @Req() req: RawBodyRequest<Request>,
-    @Body() body: unknown,
-  ): Promise<{ status: string }> {
+  receive(@Req() req: RawBodyRequest<Request>, @Body() body: unknown): { status: string } {
     const signature = req.headers['x-hub-signature-256'] as string | undefined;
     if (!this.meta.verifySignature(req.rawBody, signature)) {
       throw new ForbiddenException('invalid signature');
     }
 
+    // Acknowledge Meta immediately (avoids webhook retries / duplicate replies while
+    // a slow LLM call runs), then process in the background.
     const messages = this.meta.parseInbound(body);
+    void this.process(messages);
+    return { status: 'ok' };
+  }
+
+  private async process(messages: InboundMessage[]): Promise<void> {
     for (const msg of messages) {
+      // Show the "typing…" indicator (also marks the message read) while we work.
+      if (msg.messageId) {
+        await this.meta.showTyping(msg.messageId).catch((err) =>
+          this.logger.warn(`typing indicator failed: ${(err as Error).message}`),
+        );
+      }
       try {
         const handled = await this.onboarding.handle(msg);
         if (!handled) {
-          // Onboarded user — try AI chat first, fallback to hardcoded if AI fails completely
+          // Onboarded user — try AI chat, with a graceful message if all providers fail.
           let reply: string;
           if (msg.type === 'text' && msg.text) {
             try {
@@ -78,6 +89,5 @@ export class WhatsappController {
         this.logger.error(`message handling failed: ${(err as Error).message}`);
       }
     }
-    return { status: 'ok' };
   }
 }

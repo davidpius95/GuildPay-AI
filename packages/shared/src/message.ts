@@ -3,6 +3,7 @@ import { z } from 'zod';
 /** Normalized inbound message — the internal shape every ChannelAdapter emits. */
 export const InboundMessageSchema = z.object({
   channel: z.enum(['meta', 'twilio']),
+  messageId: z.string().optional(), // provider message id (wamid) — for read/typing receipts
   waPhone: z.string().min(1), // E.164, e.g. +974XXXXXXXX or +234XXXXXXXXXX
   type: z.enum(['text', 'audio', 'image', 'document', 'interactive']),
   text: z.string().optional(),
