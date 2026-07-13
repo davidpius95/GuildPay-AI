@@ -17,12 +17,12 @@
 | **Supabase** (self-hosted on your box) | Postgres (system of record + ledger) + Storage (media) + Auth (dashboard) | ✅ Free | You already run Supabase on the Guild Server. (Supabase cloud free tier also works.) |
 | **Redis** (self-hosted container) | Sessions, OTP TTLs, rate limits | ✅ Free | Runs on your box. (Or Upstash free tier.) |
 | **Flutterwave** | NGN rail: transfers **+ Bills (airtime/data/bills)** | ✅ Free (sandbox) | Test keys only. One provider covers payouts and VTU. No live money in MVP. |
-| **Anthropic Claude API** | Intent + vision extraction + support | 💲 **Paid (usage)** | ~$30–80 across the whole demo. The one unavoidable spend. New orgs may get trial credit. |
+| **LLM** (Groq + Gemini fallback) | Chat + intent + support | ✅ Free tier | Groq and Google Gemini both have generous free tiers — plenty for the demo. Any OpenAI-compatible provider works. |
 | **Speech-to-text** | Voice notes → text | 💲 or ✅ | OpenAI Whisper ≈ $5–15 (simplest), **or** self-host `faster-whisper` on your box = free. |
 | **Sentry** | Error tracking (optional) | ✅ Free tier | Optional for demo. |
 
-**Bottom line:** the only thing you truly pay for is **Claude API usage** (small). Whisper can be
-free if you self-host it. Everything else is free tier or on your own server.
+**Bottom line:** with **Groq/Gemini free tiers** and self-hosted Whisper, the demo can run at
+**≈ $0** in external costs — everything else is free tier or on your own server.
 
 ---
 
@@ -53,12 +53,15 @@ Do these in order — item 1 has the longest lead time.
 
 → Fills: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`.
 
-### 1.3 Anthropic (Claude) — *required, paid usage*
-1. Sign up: https://console.anthropic.com
-2. **Settings → API Keys → Create Key**. Add a small amount of credit (Billing).
-3. Model for MVP: `claude-sonnet-4-6` (intent + vision). Keep an eye on usage in the console.
+### 1.3 LLM providers (Groq primary, Gemini fallback) — *free tier*
+The `AiService` tries providers in the order set by `AI_PROVIDER_ORDER` (e.g. `groq,gemini`) and
+falls back on failure. Any OpenAI-compatible provider works; pick one or more:
+1. **Groq** (fast, free tier): https://console.groq.com → API Keys. → `GROQ_API_KEY` (+ `GROQ_MODEL`).
+2. **Google Gemini** (free tier): https://aistudio.google.com/apikey. → `GEMINI_API_KEY` (+ `GEMINI_MODEL`).
+3. Optional others via the same interface: OpenRouter, Together, Mistral, OpenAI, or Anthropic
+   (`ANTHROPIC_API_KEY`) — add the name to `AI_PROVIDER_ORDER` and set its key.
 
-→ Fills: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`.
+→ Fills: `AI_PROVIDER_ORDER`, `GROQ_API_KEY`, `GROQ_MODEL`, `GEMINI_API_KEY`, `GEMINI_MODEL`.
 
 ### 1.4 Speech-to-text — pick ONE
 - **Option A (simplest, paid):** OpenAI Whisper API. Sign up https://platform.openai.com → API Keys.
@@ -138,8 +141,9 @@ Copy `.env.production.example` → `.env` on the server and fill these in. **Nev
 | `TWILIO_ACCOUNT_SID` | ✅ (twilio) | Twilio console |
 | `TWILIO_AUTH_TOKEN` | ✅ (twilio) | Twilio console |
 | `TWILIO_WHATSAPP_FROM` | ✅ (twilio) | Twilio sandbox number, e.g. `whatsapp:+14155238886` |
-| `ANTHROPIC_API_KEY` | ✅ | console.anthropic.com |
-| `ANTHROPIC_MODEL` | ✅ | `claude-sonnet-4-6` |
+| `AI_PROVIDER_ORDER` | ✅ | fallback order, e.g. `groq,gemini` |
+| `GROQ_API_KEY` / `GROQ_MODEL` | ✅ (if in order) | console.groq.com |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | ✅ (if in order) | aistudio.google.com/apikey |
 | `STT_PROVIDER` | ✅ | `openai` or `local` |
 | `OPENAI_API_KEY` | ✅ if `STT_PROVIDER=openai` | platform.openai.com |
 | `STT_LOCAL_URL` | ✅ if `STT_PROVIDER=local` | `http://guildpay-whisper:9000` |
@@ -274,7 +278,7 @@ stay on a private `guildpay-internal` network (not exposed publicly).
 ## 8. Quick-start checklist
 
 - [ ] Meta app + test number + permanent token + app secret  → `.env`
-- [ ] Anthropic key + credit  → `.env`
+- [ ] LLM keys (Groq and/or Gemini) + `AI_PROVIDER_ORDER`  → `.env`
 - [ ] STT: OpenAI key **or** self-hosted whisper  → `.env`
 - [ ] Flutterwave test keys + webhook secret hash  → `.env`
 - [ ] Supabase project: URL + anon + service-role keys + `DATABASE_URL` + `guildpay-media` bucket  → `.env`

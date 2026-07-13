@@ -31,7 +31,10 @@ Full detail lives in `/docs`. Read these before planning work:
 ## WHAT — the stack (do not deviate without asking)
 - **Runtime:** Node.js 20 + TypeScript, **NestJS**
 - **Messaging:** Meta WhatsApp Cloud API (Twilio Sandbox as fallback) behind a `ChannelAdapter`
-- **AI:** Anthropic Claude API (intent + vision) + OpenAI Whisper (voice→text)
+- **AI:** provider-agnostic `AiService` with **fallback chain** set by `AI_PROVIDER_ORDER` env —
+  **Groq** (`llama-3.3-70b`) primary, **Gemini** (`gemini-2.0-flash`) fallback; any OpenAI-compatible
+  provider (OpenRouter, Together, Mistral, OpenAI, Anthropic) plugs in via `OpenAiCompatibleProvider`.
+  Voice→text via **OpenAI Whisper** (or self-hosted). Vision (bills/QR) uses a vision-capable provider.
 - **DB:** **Supabase** (Postgres 16 system of record + ledger, Storage for media, Auth for the dashboard).
   Use the **self-hosted Supabase already running on the Guild Server** (or Supabase cloud). Access
   Postgres via `DATABASE_URL`; use the service-role key server-side only.

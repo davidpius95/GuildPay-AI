@@ -65,7 +65,7 @@ WhatsApp (text · voice · image · buttons)
 │                       GuildPay AI Backend (NestJS)                     │
 │                                                                        │
 │  ChannelAdapter → Conversation State Machine (Redis) → AI Orchestrator │
-│                          │                                  │(Claude)  │
+│                          │                            │(Groq/Gemini…)   │
 │                          ▼                                  ▼          │
 │                     Intent Router ───────────────► Capability Modules  │
 │                                                    (one per action)    │
@@ -116,7 +116,7 @@ Resolution: `PartnerService.forCurrency(currency)` and `BillsService.forCountry(
 ## 5. Conversational flow (canonical)
 
 1. Inbound WhatsApp message → `ChannelAdapter` normalizes to `InboundMessage`.
-2. Voice → Whisper transcript; image → Claude vision extraction.
+2. Voice → Whisper transcript; image → LLM vision extraction (vision-capable provider).
 3. State machine loads session (Redis). If mid-flow (e.g. awaiting OTP), handle deterministically.
 4. Otherwise AI Orchestrator classifies **intent** (`transfer`, `airtime`, `bill`, `balance`, …) and
    extracts a **validated payload** (recipient, amount, biller, currency…).
@@ -142,7 +142,7 @@ Resolution: `PartnerService.forCurrency(currency)` and `BillsService.forCountry(
 | Savings / target-savings | ✔ | ✖ | WalletService (sub-ledger) |
 | Request money | ✔ | ✔ | WalletService |
 | Spending insights | ✔ | ✔ | WalletService analytics |
-| AI support | ✔ | ✔ | Claude + FAQ corpus |
+| AI support | ✔ | ✔ | LLM (Groq/Gemini) + FAQ corpus |
 | Admin dashboard | ✔ | ✔ | Next.js |
 
 **Explicitly out of MVP:** virtual cards, crypto, lending/credit, international transfers, live money.
