@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { HealthController } from './health/health.controller';
+import { DatabaseModule } from './database/database.module';
 import { ChannelModule } from './channel/channel.module';
 import { PartnerModule } from './partner/partner.module';
 import { BillsModule } from './bills/bills.module';
@@ -28,6 +29,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
         ],
       },
     }),
+    DatabaseModule,
     ChannelModule,
     PartnerModule,
     BillsModule,

@@ -12,18 +12,23 @@ import {
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { MetaCloudAdapter } from '../channel/meta-cloud.adapter';
+import { OnboardingService } from '../onboarding/onboarding.service';
 
 /**
  * WhatsApp webhook (Meta Cloud API).
  *   GET  /webhooks/whatsapp  — subscription verification challenge.
- *   POST /webhooks/whatsapp  — inbound messages (signature-verified) → echo bot.
+ *   POST /webhooks/whatsapp  — inbound messages (signature-verified) → onboarding
+ *                              state machine; onboarded users fall through to echo.
  * Always returns 200 quickly so Meta does not retry; failures are logged.
  */
 @Controller('webhooks/whatsapp')
 export class WhatsappController {
   private readonly logger = new Logger(WhatsappController.name);
 
-  constructor(private readonly meta: MetaCloudAdapter) {}
+  constructor(
+    private readonly meta: MetaCloudAdapter,
+    private readonly onboarding: OnboardingService,
+  ) {}
 
   @Get()
   verify(@Query() query: Record<string, string>): string {
@@ -50,14 +55,18 @@ export class WhatsappController {
 
     const messages = this.meta.parseInbound(body);
     for (const msg of messages) {
-      const reply =
-        msg.type === 'text' && msg.text
-          ? `You said: "${msg.text}"`
-          : `Got your ${msg.type} message — GuildPay is still learning to handle that. 🙂`;
       try {
-        await this.meta.send({ to: msg.waPhone, kind: 'text', body: reply });
+        const handled = await this.onboarding.handle(msg);
+        if (!handled) {
+          // Onboarded user — placeholder until the AI orchestrator (M3) lands.
+          const reply =
+            msg.type === 'text' && msg.text
+              ? `You said: "${msg.text}"`
+              : `Got your ${msg.type} message — GuildPay is still learning to handle that. 🙂`;
+          await this.meta.send({ to: msg.waPhone, kind: 'text', body: reply });
+        }
       } catch (err) {
-        this.logger.error(`echo send failed: ${(err as Error).message}`);
+        this.logger.error(`message handling failed: ${(err as Error).message}`);
       }
     }
     return { status: 'ok' };
