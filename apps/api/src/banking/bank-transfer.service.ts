@@ -10,6 +10,7 @@ import { PartnerService } from '../partner/partner.service';
 import type { Bank } from '../partner/partner-adapter';
 import { WalletService, InsufficientFundsError } from './wallet.service';
 import { OtpService } from './otp.service';
+import { ReceiptService } from './receipt.service';
 import { formatMoney } from './money';
 
 /**
@@ -30,6 +31,7 @@ export class BankTransferService {
     private readonly wallet: WalletService,
     private readonly otp: OtpService,
     private readonly partners: PartnerService,
+    private readonly receipts: ReceiptService,
   ) {}
 
   /** Step 1 — resolve bank + account name, then show the confirmation card. */
@@ -180,6 +182,7 @@ export class BankTransferService {
           `Ref: ${txn.id.slice(0, 8).toUpperCase()}\n\n` +
           `Your new balance is *${formatMoney(cur, newBalance)}*.`,
       );
+      await this.sendReceipt(user, wallet, txn, amount, completed);
       await this.channel.send({
         to: user.wa_phone,
         kind: 'interactive',
@@ -195,6 +198,45 @@ export class BankTransferService {
       await this.txns.setStatus(txn.id, 'failed');
       this.logger.error(`bank transfer ${txn.id} payout failed: ${(err as Error).message}`);
       await this.send(user, 'The bank transfer failed — your money has been refunded.');
+    }
+  }
+
+  /** Render + send the GuildPay-branded receipt image. Best-effort (never blocks the flow). */
+  private async sendReceipt(
+    user: UserRow,
+    wallet: WalletRow,
+    txn: TransactionRow,
+    amount: number,
+    completed: boolean,
+  ): Promise<void> {
+    try {
+      let bankName: string | undefined;
+      if (txn.bank_code) {
+        try {
+          const banks = await this.partners.forCurrency('NGN').listBanks();
+          bankName = banks.find((b) => b.code === txn.bank_code)?.name;
+        } catch {
+          /* bank name is optional on the receipt */
+        }
+      }
+      const png = this.receipts.render({
+        status: completed ? 'COMPLETED' : 'PROCESSING',
+        currency: wallet.currency as Currency,
+        amount,
+        sender: user.full_name ?? 'GuildPay user',
+        recipient: txn.recipient_name ?? txn.recipient_ref ?? '—',
+        bank: bankName,
+        account: txn.recipient_ref ?? undefined,
+        reference: txn.id.slice(0, 8).toUpperCase(),
+      });
+      await this.channel.send({
+        to: user.wa_phone,
+        kind: 'image',
+        image: png,
+        caption: `${completed ? 'Transfer complete' : 'Transfer processing'} — ${formatMoney(wallet.currency as Currency, amount)}`,
+      });
+    } catch (err) {
+      this.logger.warn(`receipt render/send failed: ${(err as Error).message}`);
     }
   }
 

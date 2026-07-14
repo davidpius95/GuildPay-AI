@@ -2,7 +2,12 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { InboundMessage } from '@guildpay/shared';
-import type { ChannelAdapter, OutboundMessage } from './channel-adapter';
+import type {
+  ChannelAdapter,
+  OutboundInteractive,
+  OutboundMessage,
+  OutboundText,
+} from './channel-adapter';
 
 /**
  * MetaCloudAdapter — primary WhatsApp transport (Meta Cloud API).
@@ -115,7 +120,22 @@ export class MetaCloudAdapter implements ChannelAdapter {
       return;
     }
     const url = `https://graph.facebook.com/${this.graphVersion}/${phoneNumberId}/messages`;
-    const body = this.buildBody(message);
+
+    let body: Record<string, unknown>;
+    if (message.kind === 'image') {
+      const mediaId = await this.uploadMedia(token, phoneNumberId, message.image, message.mimeType ?? 'image/png');
+      if (!mediaId) return; // upload already logged the failure
+      body = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: message.to,
+        type: 'image',
+        image: { id: mediaId, ...(message.caption ? { caption: message.caption } : {}) },
+      };
+    } else {
+      body = this.buildBody(message);
+    }
+
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -125,6 +145,30 @@ export class MetaCloudAdapter implements ChannelAdapter {
       const detail = await res.text();
       this.logger.error(`Meta send failed (${res.status}): ${detail}`);
     }
+  }
+
+  /** Upload a binary to the WhatsApp media endpoint; returns the media id. */
+  private async uploadMedia(
+    token: string,
+    phoneNumberId: string,
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<string | null> {
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', mimeType);
+    form.append('file', new Blob([buffer], { type: mimeType }), 'receipt.png');
+    const res = await fetch(`https://graph.facebook.com/${this.graphVersion}/${phoneNumberId}/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }, // no Content-Type: fetch sets the multipart boundary
+      body: form,
+    });
+    if (!res.ok) {
+      this.logger.error(`Meta media upload failed (${res.status}): ${await res.text()}`);
+      return null;
+    }
+    const json = (await res.json()) as { id?: string };
+    return json.id ?? null;
   }
 
   /**
@@ -160,7 +204,7 @@ export class MetaCloudAdapter implements ChannelAdapter {
     };
   }
 
-  private buildBody(message: OutboundMessage): Record<string, unknown> {
+  private buildBody(message: OutboundText | OutboundInteractive): Record<string, unknown> {
     const base = { messaging_product: 'whatsapp', recipient_type: 'individual', to: message.to };
     if (message.kind === 'interactive') {
       return {

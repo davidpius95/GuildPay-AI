@@ -40,8 +40,9 @@ function make() {
     transfer: vi.fn(async () => ({ fromBalance: '8000', toBalance: '2000' })),
   } as unknown as WalletService;
   const otp = { issue: vi.fn(async () => '123456'), verify: vi.fn() } as unknown as OtpService;
+  const receipts = { render: vi.fn(() => Buffer.from('png')) } as unknown as import('./receipt.service').ReceiptService;
 
-  const svc = new TransferService(channel, users, wallets, txns, audit, wallet, otp);
+  const svc = new TransferService(channel, users, wallets, txns, audit, wallet, otp, receipts);
   return { svc, channel, txns, wallet, otp };
 }
 

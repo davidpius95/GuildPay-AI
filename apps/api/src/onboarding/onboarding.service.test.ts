@@ -85,11 +85,11 @@ describe('OnboardingService', () => {
 
     // language
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'lang_en' }));
-    expect(last(h.sent).body).toContain('full name');
+    expect((last(h.sent) as any).body).toContain('full name');
 
     // name → asks for email
     await h.svc.handle(msg({ text: 'Ada Lovelace' }));
-    expect(last(h.sent).body).toContain('email');
+    expect((last(h.sent) as any).body).toContain('email');
 
     // email → market buttons
     await h.svc.handle(msg({ text: 'ada@example.com' }));
@@ -97,11 +97,11 @@ describe('OnboardingService', () => {
 
     // market NG → asks for BVN
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'market_ng' }));
-    expect(last(h.sent).body).toContain('BVN');
+    expect((last(h.sent) as any).body).toContain('BVN');
 
     // invalid KYC is rejected, valid KYC advances to consent
     await h.svc.handle(msg({ text: '123' }));
-    expect(last(h.sent).body).toContain("doesn't look right");
+    expect((last(h.sent) as any).body).toContain("doesn't look right");
     await h.svc.handle(msg({ text: '12345678901' }));
     expect(last(h.sent).kind).toBe('interactive'); // consent buttons
 
@@ -110,10 +110,10 @@ describe('OnboardingService', () => {
     expect(handled).toBe(true);
     expect(h.wallets.create).toHaveBeenCalledOnce();
     expect(h.createVirtualAccount).toHaveBeenCalledOnce(); // NGN provisions a NUBAN
-    expect(last(h.sent).body).toContain("all set");
-    expect(last(h.sent).body).toContain('GPA-NG-');
-    expect(last(h.sent).body).toContain('9900001111'); // funding account shown
-    expect(last(h.sent).body).toContain('Wema Bank');
+    expect((last(h.sent) as any).body).toContain("all set");
+    expect((last(h.sent) as any).body).toContain('GPA-NG-');
+    expect((last(h.sent) as any).body).toContain('9900001111'); // funding account shown
+    expect((last(h.sent) as any).body).toContain('Wema Bank');
   });
 
   it('QAR onboarding provisions a simulated account and shows it', async () => {
@@ -127,7 +127,7 @@ describe('OnboardingService', () => {
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'consent_yes' }));
     expect(h.wallets.create).toHaveBeenCalledWith(expect.objectContaining({ currency: 'QAR' }));
     expect(h.createVirtualAccount).toHaveBeenCalledOnce();
-    expect(last(h.sent).body).toContain('GPA-QA-');
+    expect((last(h.sent) as any).body).toContain('GPA-QA-');
   });
 
   it('returns false (not handled) once onboarded', async () => {

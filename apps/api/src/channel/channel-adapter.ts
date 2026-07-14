@@ -14,7 +14,15 @@ export interface OutboundInteractive {
   buttons: { id: string; title: string }[];
 }
 
-export type OutboundMessage = OutboundText | OutboundInteractive;
+export interface OutboundImage {
+  to: string;
+  kind: 'image';
+  image: Buffer;
+  mimeType?: string; // defaults to image/png
+  caption?: string;
+}
+
+export type OutboundMessage = OutboundText | OutboundInteractive | OutboundImage;
 
 /**
  * ChannelAdapter — abstracts the WhatsApp transport so the app is agnostic to

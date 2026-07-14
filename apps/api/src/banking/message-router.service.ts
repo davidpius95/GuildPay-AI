@@ -91,8 +91,7 @@ export class MessageRouter {
       case 'balance':
         return this.sendBalance(user, wallet);
       case 'fund':
-        if (intent.amount) return this.fund(user, wallet, intent.amount);
-        return this.send(user, "How much would you like to add? e.g. *fund 5000*.");
+        return this.handleFundIntent(user, wallet, intent.amount);
       case 'p2p_transfer':
         if (intent.amount && intent.recipientRef) {
           return this.transfer.start(user, wallet, intent.amount, intent.recipientRef);
@@ -145,7 +144,7 @@ export class MessageRouter {
       case 'act_balance':
         return this.sendBalance(user, wallet);
       case 'act_fund':
-        return this.send(user, 'How much would you like to add? e.g. *fund 5000*.');
+        return this.handleFundIntent(user, wallet);
       case 'act_send':
         return this.send(
           user,
@@ -176,6 +175,28 @@ export class MessageRouter {
       currency: wallet.currency as Currency,
     });
     await this.send(user, `✅ Saved *${txn.recipient_name ?? txn.recipient_ref}* as a beneficiary.`);
+  }
+
+  /** Route funding requests to real NUBAN accounts (NGN) or demo credits (QAR). */
+  private async handleFundIntent(user: UserRow, wallet: WalletRow, amount?: number | null): Promise<void> {
+    if (wallet.currency === 'NGN') {
+      if (!wallet.virtual_account_number) {
+        return this.send(user, 'Your account is still being set up. Please try again in a few minutes.');
+      }
+      return this.send(
+        user,
+        `*Fund your wallet* — transfer to:\n` +
+          `Bank: ${wallet.virtual_bank_name}\n` +
+          `Account: ${wallet.virtual_account_number}\n` +
+          `Name: ${user.full_name ?? 'GuildPay user'}`
+      );
+    }
+    
+    // Demo funding for simulated currencies (QAR)
+    if (amount) {
+      return this.fund(user, wallet, amount);
+    }
+    return this.send(user, 'How much would you like to add? e.g. *fund 5000*.');
   }
 
   /** Demo funding — simulated credit, no OTP (money coming in). */

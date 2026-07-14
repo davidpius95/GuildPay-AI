@@ -8,6 +8,7 @@ import { TransactionsRepository, type TransactionRow } from '../database/transac
 import { AuditRepository } from '../database/audit.repository';
 import { WalletService, InsufficientFundsError } from './wallet.service';
 import { OtpService } from './otp.service';
+import { ReceiptService } from './receipt.service';
 import { formatMoney, phoneCandidates } from './money';
 
 /**
@@ -26,6 +27,7 @@ export class TransferService {
     private readonly audit: AuditRepository,
     private readonly wallet: WalletService,
     private readonly otp: OtpService,
+    private readonly receipts: ReceiptService,
   ) {}
 
   /** Step 1 — validate, create a pending_confirmation transaction, show the card. */
@@ -132,6 +134,25 @@ export class TransferService {
         user,
         `✅ Sent ${formatMoney(cur, amount)} to *${txn.recipient_name}*.\nNew balance: ${formatMoney(cur, fromBalance)}\nRef: ${txn.id.slice(0, 8)}`,
       );
+      try {
+        const png = this.receipts.render({
+          status: 'COMPLETED',
+          currency: cur,
+          amount,
+          sender: user.full_name ?? 'GuildPay user',
+          recipient: txn.recipient_name ?? recipient.reference,
+          account: recipient.reference,
+          reference: txn.id.slice(0, 8).toUpperCase(),
+        });
+        await this.channel.send({
+          to: user.wa_phone,
+          kind: 'image',
+          image: png,
+          caption: `Transfer complete — ${formatMoney(cur, amount)}`,
+        });
+      } catch (err) {
+        this.logger.warn(`receipt render/send failed: ${(err as Error).message}`);
+      }
       const recipientUser = await this.userOf(recipient);
       if (recipientUser) {
         await this.channel.send({

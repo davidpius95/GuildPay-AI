@@ -61,8 +61,9 @@ function make(opts: { transferStatus?: 'completed' | 'pending' | 'failed'; debit
     bankTransfer,
   };
   const partners = { forCurrency: vi.fn(() => adapter) } as unknown as PartnerService;
+  const receipts = { render: vi.fn(() => Buffer.from('png')) } as unknown as import('./receipt.service').ReceiptService;
 
-  const svc = new BankTransferService(channel, users, txns, audit, wallet$, otp, partners);
+  const svc = new BankTransferService(channel, users, txns, audit, wallet$, otp, partners, receipts);
   return { svc, channel, txns, wallet: wallet$, otp, bankTransfer, adapter };
 }
 
