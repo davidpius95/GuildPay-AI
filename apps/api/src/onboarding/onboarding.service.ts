@@ -136,9 +136,10 @@ export class OnboardingService {
       metadata: { reference, currency },
     });
 
-    // NGN: provision a real virtual account (NUBAN) via the partner rail. Non-blocking:
-    // onboarding still completes if provisioning fails — the user can fund later.
-    const virtualAccount = market === 'NG' ? await this.provisionAccount(user, wallet.id, reference) : null;
+    // Provision the account the user funds into via the currency's partner rail
+    // (NGN → real NUBAN; QAR → simulated). Non-blocking: onboarding still completes
+    // if provisioning fails — the user can fund later.
+    const virtualAccount = await this.provisionAccount(user, wallet.id, reference, currency);
 
     const symbol = CURRENCY_META[currency].symbol;
     const fundingBlock = virtualAccount
@@ -160,15 +161,16 @@ export class OnboardingService {
     return true;
   }
 
-  /** Create + persist a NUBAN. Errors are logged/audited but never block onboarding. */
+  /** Create + persist the funding account (NGN NUBAN / QAR simulated). Never blocks onboarding. */
   private async provisionAccount(
     user: UserRow,
     walletId: string,
     reference: string,
+    currency: Currency,
   ): Promise<CreateVirtualAccountResult | null> {
     const [firstName, ...rest] = (user.full_name ?? '').trim().split(/\s+/);
     try {
-      const account = await this.partners.forCurrency('NGN').createVirtualAccount({
+      const account = await this.partners.forCurrency(currency).createVirtualAccount({
         userRef: reference,
         email: this.syntheticEmail(user.wa_phone),
         firstName: firstName || undefined,
@@ -187,7 +189,7 @@ export class OnboardingService {
       });
       return account;
     } catch (err) {
-      this.logger.error(`NUBAN provisioning failed for wallet ${walletId}: ${(err as Error).message}`);
+      this.logger.error(`account provisioning failed for wallet ${walletId}: ${(err as Error).message}`);
       await this.audit.record({
         userId: user.id,
         action: 'virtual_account_failed',

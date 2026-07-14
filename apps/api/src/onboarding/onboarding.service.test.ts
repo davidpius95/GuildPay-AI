@@ -108,6 +108,19 @@ describe('OnboardingService', () => {
     expect(last(h.sent).body).toContain('Wema Bank');
   });
 
+  it('QAR onboarding provisions a simulated account and shows it', async () => {
+    const h = harness();
+    await h.svc.handle(msg({ text: 'hi' }));
+    await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'lang_en' }));
+    await h.svc.handle(msg({ text: 'Noor Ali' }));
+    await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'market_qa' })); // Qatar
+    await h.svc.handle(msg({ text: '12345678901' })); // QID
+    await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'consent_yes' }));
+    expect(h.wallets.create).toHaveBeenCalledWith(expect.objectContaining({ currency: 'QAR' }));
+    expect(h.createVirtualAccount).toHaveBeenCalledOnce();
+    expect(last(h.sent).body).toContain('GPA-QA-');
+  });
+
   it('returns false (not handled) once onboarded', async () => {
     const h = harness();
     await h.svc.handle(msg({ text: 'hi' })); // create at step language
