@@ -68,8 +68,8 @@ export class AdminService {
       );
       await client.query(
         `insert into public.audit_events (user_id, actor, action, entity, entity_id)
-         values ($1, 'admin', 'user_reset', 'user', $1)`,
-        [userId],
+         values ($1, 'admin', 'user_reset', 'user', $2)`,
+        [userId, userId],
       );
       await client.query('commit');
       this.logger.log(`user ${userId} reset to fresh onboarding`);

@@ -135,7 +135,7 @@ export class FlutterwaveController {
     const txn = await this.txns.create({
       walletId: wallet.id,
       type: 'funding',
-      channel: 'bank_transfer',
+      channel: 'system', // inbound webhook credit — not a user channel
       currency,
       amount,
       providerRef: flwRef,

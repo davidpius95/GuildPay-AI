@@ -140,6 +140,15 @@ export class TransferService {
           body: `💰 You received ${formatMoney(cur, amount)} from *${user.full_name ?? 'a GuildPay user'}*.\nNew balance: ${formatMoney(cur, toBalance)}`,
         });
       }
+      await this.channel.send({
+        to: user.wa_phone,
+        kind: 'interactive',
+        body: `Save *${txn.recipient_name}* as a beneficiary?`,
+        buttons: [
+          { id: 'bene_save', title: 'Save ✅' },
+          { id: 'bene_no', title: 'No thanks' },
+        ],
+      });
     } catch (err) {
       await this.txns.setStatus(txn.id, 'failed');
       this.logger.error(`transfer ${txn.id} failed: ${(err as Error).message}`);

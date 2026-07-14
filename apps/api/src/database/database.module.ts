@@ -6,6 +6,7 @@ import { UsersRepository } from './users.repository';
 import { WalletsRepository } from './wallets.repository';
 import { TransactionsRepository } from './transactions.repository';
 import { AuditRepository } from './audit.repository';
+import { BeneficiariesRepository } from './beneficiaries.repository';
 
 /**
  * Postgres access to Supabase over DATABASE_URL (session pooler). Raw SQL via a
@@ -29,7 +30,15 @@ import { AuditRepository } from './audit.repository';
     WalletsRepository,
     TransactionsRepository,
     AuditRepository,
+    BeneficiariesRepository,
   ],
-  exports: [PG_POOL, UsersRepository, WalletsRepository, TransactionsRepository, AuditRepository],
+  exports: [
+    PG_POOL,
+    UsersRepository,
+    WalletsRepository,
+    TransactionsRepository,
+    AuditRepository,
+    BeneficiariesRepository,
+  ],
 })
 export class DatabaseModule {}

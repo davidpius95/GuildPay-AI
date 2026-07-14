@@ -88,8 +88,11 @@ export class BankTransferService {
       to: user.wa_phone,
       kind: 'interactive',
       body:
-        `Send ${formatMoney(cur, amount)} to:\n` +
-        `*${accountName}*\n${bank.name} · ${accountNumber}\n\nConfirm?`,
+        `Please confirm this transfer:\n\n` +
+        `Amount: *${formatMoney(cur, amount)}*\n` +
+        `To: ⚠️ *${accountName}*\n` +
+        `Bank: ${bank.name}\n` +
+        `Account: ${accountNumber}`,
       buttons: [
         { id: 'txn_confirm', title: 'Confirm ✅' },
         { id: 'txn_cancel', title: 'Cancel' },
@@ -170,9 +173,22 @@ export class BankTransferService {
       const newBalance = await this.wallet.getBalance(wallet.id);
       await this.send(
         user,
-        `${completed ? '✅ Sent' : '⏳ Processing'} ${formatMoney(cur, amount)} to *${txn.recipient_name}*.\n` +
-          `Balance: ${formatMoney(cur, newBalance)}\nRef: ${txn.id.slice(0, 8)}`,
+        `${completed ? '✅ *Transfer successful*' : '⏳ *Transfer processing*'}\n\n` +
+          `Amount: ${formatMoney(cur, amount)}\n` +
+          `To: ${txn.recipient_name}\n` +
+          `Account: ${txn.recipient_ref}\n` +
+          `Ref: ${txn.id.slice(0, 8).toUpperCase()}\n\n` +
+          `Your new balance is *${formatMoney(cur, newBalance)}*.`,
       );
+      await this.channel.send({
+        to: user.wa_phone,
+        kind: 'interactive',
+        body: `Save *${txn.recipient_name}* as a beneficiary?`,
+        buttons: [
+          { id: 'bene_save', title: 'Save ✅' },
+          { id: 'bene_no', title: 'No thanks' },
+        ],
+      });
     } catch (err) {
       // Reverse the debit — no money left the wallet.
       await this.wallet.credit(wallet.id, amount, txn.id);

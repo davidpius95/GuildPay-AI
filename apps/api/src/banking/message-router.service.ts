@@ -7,6 +7,7 @@ import { UsersRepository, type UserRow } from '../database/users.repository';
 import { WalletsRepository, type WalletRow } from '../database/wallets.repository';
 import { TransactionsRepository } from '../database/transactions.repository';
 import { AuditRepository } from '../database/audit.repository';
+import { BeneficiariesRepository } from '../database/beneficiaries.repository';
 import { WalletService } from './wallet.service';
 import { OrchestratorService } from './orchestrator.service';
 import { TransferService } from './transfer.service';
@@ -28,6 +29,7 @@ export class MessageRouter {
     private readonly wallets: WalletsRepository,
     private readonly txns: TransactionsRepository,
     private readonly audit: AuditRepository,
+    private readonly beneficiaries: BeneficiariesRepository,
     private readonly wallet: WalletService,
     private readonly orchestrator: OrchestratorService,
     private readonly transfer: TransferService,
@@ -72,6 +74,9 @@ export class MessageRouter {
       }
       return this.send(user, 'Please tap *Confirm* or *Cancel* to continue.');
     }
+
+    // ── interactive quick-action / beneficiary buttons (no pending txn) ──────
+    if (msg.interactiveReplyId) return this.handleButton(user, wallet, msg.interactiveReplyId);
 
     // ── global shortcuts ────────────────────────────────────────────────────
     if (lower === 'balance') return this.sendBalance(user, wallet);
@@ -121,10 +126,56 @@ export class MessageRouter {
 
   private async sendBalance(user: UserRow, wallet: WalletRow): Promise<void> {
     const balance = await this.wallet.getBalance(wallet.id);
-    await this.send(
-      user,
-      `💼 *Balance:* ${formatMoney(wallet.currency as Currency, balance)}\nWallet: ${wallet.reference}`,
-    );
+    await this.channel.send({
+      to: user.wa_phone,
+      kind: 'interactive',
+      body:
+        `💼 Your balance is *${formatMoney(wallet.currency as Currency, balance)}*.\n` +
+        `Wallet: ${wallet.reference}\n\nWhat would you like to do?`,
+      buttons: [
+        { id: 'act_fund', title: 'Fund wallet' },
+        { id: 'act_send', title: 'Send money' },
+      ],
+    });
+  }
+
+  /** Route a tapped quick-action / beneficiary button (used when no txn is pending). */
+  private async handleButton(user: UserRow, wallet: WalletRow, id: string): Promise<void> {
+    switch (id) {
+      case 'act_balance':
+        return this.sendBalance(user, wallet);
+      case 'act_fund':
+        return this.send(user, 'How much would you like to add? e.g. *fund 5000*.');
+      case 'act_send':
+        return this.send(
+          user,
+          'Who should I send to?\n' +
+            '• GuildPay user: *send 2000 to 0803...*\n' +
+            '• Any bank: *send 5000 to 0690000031 GTBank*',
+        );
+      case 'bene_save':
+        return this.saveBeneficiary(user, wallet);
+      case 'bene_no':
+        return this.send(user, 'No problem 👍');
+      default:
+        return this.send(user, 'Tap an option above, or just tell me what you need. 💬');
+    }
+  }
+
+  /** Save the most recent completed transfer's recipient as a beneficiary. */
+  private async saveBeneficiary(user: UserRow, wallet: WalletRow): Promise<void> {
+    const txn = await this.txns.findLatestByStatus(wallet.id, ['completed']);
+    if (!txn || !txn.recipient_ref) {
+      return this.send(user, "I couldn't find a recent recipient to save.");
+    }
+    await this.beneficiaries.add({
+      userId: user.id,
+      name: txn.recipient_name ?? txn.recipient_ref,
+      ref: txn.recipient_ref,
+      bankCode: txn.bank_code,
+      currency: wallet.currency as Currency,
+    });
+    await this.send(user, `✅ Saved *${txn.recipient_name ?? txn.recipient_ref}* as a beneficiary.`);
   }
 
   /** Demo funding — simulated credit, no OTP (money coming in). */
