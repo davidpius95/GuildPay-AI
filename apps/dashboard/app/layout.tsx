@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import './globals.css';
 
 export const metadata = {
   title: 'GuildPay AI — Admin',
@@ -8,7 +9,24 @@ export const metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ fontFamily: 'system-ui, sans-serif', margin: 0 }}>{children}</body>
+      <body>
+        <nav className="nav">
+          <div className="brand">
+            Guild<span>Pay</span> Admin
+          </div>
+          <a className="link" href="/">
+            Overview
+          </a>
+          <a className="link" href="/transactions">
+            Transactions
+          </a>
+          <div className="spacer" />
+          <div className="live">
+            <span className="dot" /> live
+          </div>
+        </nav>
+        {children}
+      </body>
     </html>
   );
 }
