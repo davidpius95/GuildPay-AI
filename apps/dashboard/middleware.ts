@@ -1,32 +1,33 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * HTTP Basic Auth gate — the dashboard is publicly routed and shows real user/txn
- * data, so it stays behind credentials. Set DASHBOARD_USER + DASHBOARD_PASSWORD.
- * Fail-closed: if they aren't configured, access is denied (never open by accident).
+ * Cookie-based auth gate. The dashboard is publicly routed and shows real user/txn
+ * data, so it stays behind a login. We avoid HTTP Basic Auth on purpose — its 401
+ * challenge loops in Chrome over HTTP/2 behind Cloudflare (ERR_TOO_MANY_RETRIES).
+ *
+ * Flow: no valid session cookie → redirect to /login (always allowed, so no loop).
+ * The /login form posts to /api/login, which sets the cookie on a correct password.
  */
 export function middleware(req: NextRequest): NextResponse {
-  const user = process.env.DASHBOARD_USER;
-  const pass = process.env.DASHBOARD_PASSWORD;
+  const { pathname } = req.nextUrl;
 
-  const deny = (msg: string) =>
-    new NextResponse(msg, {
-      status: 401,
-      headers: { 'WWW-Authenticate': 'Basic realm="GuildPay Admin", charset="UTF-8"' },
-    });
-
-  if (!user || !pass) return deny('Dashboard auth is not configured.');
-
-  const header = req.headers.get('authorization') ?? '';
-  const [scheme, encoded] = header.split(' ');
-  if (scheme === 'Basic' && encoded) {
-    const [u, p] = atob(encoded).split(':'); // atob is available on the Edge runtime
-    if (u === user && p === pass) return NextResponse.next();
+  // Always allow the login page + its API + static assets → prevents redirect loops.
+  if (pathname.startsWith('/login') || pathname.startsWith('/api/login')) {
+    return NextResponse.next();
   }
-  return deny('Authentication required.');
+
+  const token = process.env.DASHBOARD_SESSION_TOKEN;
+  const cookie = req.cookies.get('gp_session')?.value;
+  if (token && cookie && cookie === token) {
+    return NextResponse.next();
+  }
+
+  const url = req.nextUrl.clone();
+  url.pathname = '/login';
+  url.search = '';
+  return NextResponse.redirect(url);
 }
 
-// Guard everything except Next internals and static assets.
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
