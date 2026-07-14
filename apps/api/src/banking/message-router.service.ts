@@ -130,7 +130,10 @@ export class MessageRouter {
       kind: 'interactive',
       body:
         `💼 Your balance is *${formatMoney(wallet.currency as Currency, balance)}*.\n` +
-        `Wallet: ${wallet.reference}\n\nWhat would you like to do?`,
+        (wallet.virtual_account_number
+          ? `Account: ${wallet.virtual_account_number} (${wallet.virtual_bank_name})\n\n`
+          : `Wallet: ${wallet.reference}\n\n`) +
+        `What would you like to do?`,
       buttons: [
         { id: 'act_fund', title: 'Fund wallet' },
         { id: 'act_send', title: 'Send money' },
