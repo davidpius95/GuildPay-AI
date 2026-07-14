@@ -13,6 +13,7 @@ export interface WalletRow {
   status: string;
   virtual_account_number: string | null;
   virtual_bank_name: string | null;
+  virtual_account_ref: string | null;
   daily_limit: string;
   txn_limit: string;
   created_at: string;
@@ -59,12 +60,17 @@ export class WalletsRepository {
   }
 
   /** Attach a provisioned virtual account (NUBAN) to a wallet after partner creation. */
-  async setVirtualAccount(walletId: string, accountNumber: string, bankName: string): Promise<void> {
+  async setVirtualAccount(
+    walletId: string,
+    accountNumber: string,
+    bankName: string,
+    providerRef?: string,
+  ): Promise<void> {
     await this.pool.query(
       `update public.wallets
-         set virtual_account_number = $1, virtual_bank_name = $2
-       where id = $3`,
-      [accountNumber, bankName, walletId],
+         set virtual_account_number = $1, virtual_bank_name = $2, virtual_account_ref = $3
+       where id = $4`,
+      [accountNumber, bankName, providerRef ?? null, walletId],
     );
   }
 }

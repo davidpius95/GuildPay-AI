@@ -54,6 +54,35 @@ export async function getVolumeLast7Days(): Promise<VolumePoint[]> {
   );
 }
 
+export interface UserRow {
+  id: string;
+  wa_phone: string;
+  full_name: string | null;
+  email: string | null;
+  market: string | null;
+  status: string;
+  kyc_status: string;
+  onboarding_step: string;
+  created_at: string;
+  wallet_ref: string | null;
+  balance: string | null;
+  currency: string | null;
+  virtual_account_number: string | null;
+}
+
+export async function getUsers(): Promise<UserRow[]> {
+  return query<UserRow>(
+    `select u.id, u.wa_phone, u.full_name, u.email, u.market, u.status, u.kyc_status,
+            u.onboarding_step, u.created_at,
+            w.reference as wallet_ref, w.balance::text as balance, w.currency,
+            w.virtual_account_number
+     from public.users u
+     left join public.wallets w on w.user_id = u.id
+     order by u.created_at desc
+     limit 200`,
+  );
+}
+
 export interface Txn {
   id: string;
   type: string;

@@ -45,6 +45,8 @@ export class OnboardingService {
         return this.stepLanguage(user, msg);
       case 'name':
         return this.stepName(user, msg);
+      case 'email':
+        return this.stepEmail(user, msg);
       case 'market':
         return this.stepMarket(user, msg);
       case 'kyc':
@@ -67,10 +69,30 @@ export class OnboardingService {
   }
 
   private async stepName(user: UserRow, msg: InboundMessage): Promise<boolean> {
-    const name = msg.text?.trim();
-    if (!name) return this.text(user.wa_phone, 'Please type your full name.'), true;
-    await this.users.update(user.id, { full_name: name, onboarding_step: 'market' });
-    await this.promptMarket(user.wa_phone, name);
+    const name = msg.text?.trim().replace(/\s+/g, ' ');
+    if (!name || !name.includes(' ')) {
+      await this.text(user.wa_phone, 'Please type your *full name* (first and last), e.g. Ada Obi.');
+      return true;
+    }
+    const [firstName, ...rest] = name.split(' ');
+    await this.users.update(user.id, {
+      full_name: name,
+      first_name: firstName,
+      last_name: rest.join(' '),
+      onboarding_step: 'email',
+    });
+    await this.text(user.wa_phone, `Thanks, ${firstName}! What's your *email address*? (for receipts and your account)`);
+    return true;
+  }
+
+  private async stepEmail(user: UserRow, msg: InboundMessage): Promise<boolean> {
+    const email = (msg.text ?? '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      await this.text(user.wa_phone, "That doesn't look like a valid email. Please enter it again, e.g. ada@example.com.");
+      return true;
+    }
+    await this.users.update(user.id, { email, onboarding_step: 'market' });
+    await this.promptMarket(user.wa_phone, user.first_name ?? user.full_name ?? '');
     return true;
   }
 
@@ -168,17 +190,20 @@ export class OnboardingService {
     reference: string,
     currency: Currency,
   ): Promise<CreateVirtualAccountResult | null> {
-    const [firstName, ...rest] = (user.full_name ?? '').trim().split(/\s+/);
+    const firstName = user.first_name ?? (user.full_name ?? '').trim().split(/\s+/)[0];
+    const lastName = user.last_name ?? firstName;
     try {
       const account = await this.partners.forCurrency(currency).createVirtualAccount({
         userRef: reference,
-        email: this.syntheticEmail(user.wa_phone),
+        email: user.email ?? this.syntheticEmail(user.wa_phone),
         firstName: firstName || undefined,
-        lastName: rest.join(' ') || firstName || undefined,
+        lastName: lastName || firstName || undefined,
         phone: user.wa_phone,
         bvn: user.kyc_id ?? undefined,
       });
-      await this.wallets.setVirtualAccount(walletId, account.accountNumber, account.bankName);
+      await this.wallets.setVirtualAccount(walletId, account.accountNumber, account.bankName, account.providerRef);
+      // BVN was accepted by the rail at account creation → mark KYC verified.
+      await this.users.update(user.id, { kyc_status: 'verified' });
       // Never log/audit the full account number or BVN.
       await this.audit.record({
         userId: user.id,
@@ -190,6 +215,7 @@ export class OnboardingService {
       return account;
     } catch (err) {
       this.logger.error(`account provisioning failed for wallet ${walletId}: ${(err as Error).message}`);
+      await this.users.update(user.id, { kyc_status: 'failed' });
       await this.audit.record({
         userId: user.id,
         action: 'virtual_account_failed',
@@ -200,7 +226,7 @@ export class OnboardingService {
     }
   }
 
-  /** Flutterwave requires an email for virtual accounts; users don't give one, so derive a stable one. */
+  /** Fallback email if somehow missing (shouldn't happen post-M-email-step). */
   private syntheticEmail(waPhone: string): string {
     return `${waPhone.replace(/\D/g, '')}@wallet.guildpay.ai`;
   }

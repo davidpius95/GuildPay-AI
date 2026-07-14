@@ -9,6 +9,7 @@ import { SttModule } from './stt/stt.module';
 import { PartnerModule } from './partner/partner.module';
 import { BillsModule } from './bills/bills.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     PartnerModule,
     BillsModule,
     WebhooksModule,
+    AdminModule,
   ],
   controllers: [HealthController],
 })

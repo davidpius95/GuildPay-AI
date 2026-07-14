@@ -6,10 +6,14 @@ export interface UserRow {
   id: string;
   wa_phone: string;
   full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
   language: string;
   market: string | null;
   currency: string | null;
   kyc_id: string | null;
+  kyc_status: string;
   kyc_expiry: string | null;
   consent_at: string | null;
   pin_hash: string | null;
@@ -19,11 +23,21 @@ export interface UserRow {
   updated_at: string;
 }
 
-/** Fields onboarding is allowed to update on a user. */
+/** Fields onboarding/admin are allowed to update on a user. */
 export type UserUpdate = Partial<
   Pick<
     UserRow,
-    'full_name' | 'language' | 'market' | 'currency' | 'kyc_id' | 'status' | 'onboarding_step'
+    | 'full_name'
+    | 'first_name'
+    | 'last_name'
+    | 'email'
+    | 'language'
+    | 'market'
+    | 'currency'
+    | 'kyc_id'
+    | 'kyc_status'
+    | 'status'
+    | 'onboarding_step'
   >
 > & { consent_at?: 'now' };
 

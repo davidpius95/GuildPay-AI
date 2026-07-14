@@ -12,10 +12,14 @@ function baseUser(waPhone: string): UserRow {
     id: 'u1',
     wa_phone: waPhone,
     full_name: null,
+    first_name: null,
+    last_name: null,
+    email: null,
     language: 'en',
     market: null,
     currency: null,
     kyc_id: null,
+    kyc_status: 'pending',
     kyc_expiry: null,
     consent_at: null,
     pin_hash: null,
@@ -83,8 +87,12 @@ describe('OnboardingService', () => {
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'lang_en' }));
     expect(last(h.sent).body).toContain('full name');
 
-    // name
+    // name → asks for email
     await h.svc.handle(msg({ text: 'Ada Lovelace' }));
+    expect(last(h.sent).body).toContain('email');
+
+    // email → market buttons
+    await h.svc.handle(msg({ text: 'ada@example.com' }));
     expect(last(h.sent).kind).toBe('interactive'); // market buttons
 
     // market NG → asks for BVN
@@ -113,6 +121,7 @@ describe('OnboardingService', () => {
     await h.svc.handle(msg({ text: 'hi' }));
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'lang_en' }));
     await h.svc.handle(msg({ text: 'Noor Ali' }));
+    await h.svc.handle(msg({ text: 'noor@example.com' }));
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'market_qa' })); // Qatar
     await h.svc.handle(msg({ text: '12345678901' })); // QID
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'consent_yes' }));
