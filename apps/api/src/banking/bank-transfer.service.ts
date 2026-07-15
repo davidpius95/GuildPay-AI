@@ -147,8 +147,10 @@ export class BankTransferService {
       return;
     }
 
+    // ── The payout attempt: the ONLY place a debit may be reversed. ───────────
+    let res: { status: 'completed' | 'pending' | 'failed'; raw?: unknown };
     try {
-      const res = await this.partners.forCurrency('NGN').bankTransfer({
+      res = await this.partners.forCurrency('NGN').bankTransfer({
         transactionId: txn.id,
         fromAccountRef: wallet.reference,
         accountNumber: txn.recipient_ref!,
@@ -161,16 +163,40 @@ export class BankTransferService {
         const raw = res.raw as { complete_message?: string; message?: string } | undefined;
         throw new Error(raw?.complete_message ?? raw?.message ?? 'payout rejected by the bank');
       }
-
-      const completed = res.status === 'completed';
-      await this.txns.setStatus(txn.id, completed ? 'completed' : 'pending');
+    } catch (err) {
+      // Payout was NOT accepted → reverse the debit; no money left the wallet.
+      await this.wallet.credit(wallet.id, amount, txn.id);
+      await this.txns.setStatus(txn.id, 'failed');
+      const message = (err as Error).message;
+      this.logger.error(`bank transfer ${txn.id} payout failed: ${message}`);
       await this.audit.record({
         userId: user.id,
-        action: 'bank_transfer_initiated',
+        action: 'bank_transfer_failed',
         entity: 'transaction',
         entityId: txn.id,
-        metadata: { amount, bankCode: txn.bank_code },
+        metadata: { reason: payoutReason(message) },
       });
+      await this.send(
+        user,
+        `❌ *Transfer couldn't complete*\n` +
+          `Your ${formatMoney(cur, amount)} has been refunded.\n\n` +
+          `Reason: ${payoutReason(message)}`,
+      );
+      return;
+    }
+
+    // ── Payout ACCEPTED — money is in flight. From here NOTHING reverses; a
+    //    later failure is handled only by the transfer.completed webhook. ──────
+    const completed = res.status === 'completed';
+    await this.txns.setStatus(txn.id, completed ? 'completed' : 'processing');
+    await this.audit.record({
+      userId: user.id,
+      action: 'bank_transfer_initiated',
+      entity: 'transaction',
+      entityId: txn.id,
+      metadata: { amount, bankCode: txn.bank_code },
+    });
+    try {
       const newBalance = await this.wallet.getBalance(wallet.id);
       await this.send(
         user,
@@ -192,24 +218,8 @@ export class BankTransferService {
         ],
       });
     } catch (err) {
-      // Reverse the debit — no money left the wallet.
-      await this.wallet.credit(wallet.id, amount, txn.id);
-      await this.txns.setStatus(txn.id, 'failed');
-      const message = (err as Error).message;
-      this.logger.error(`bank transfer ${txn.id} payout failed: ${message}`);
-      await this.audit.record({
-        userId: user.id,
-        action: 'bank_transfer_failed',
-        entity: 'transaction',
-        entityId: txn.id,
-        metadata: { reason: payoutReason(message) },
-      });
-      await this.send(
-        user,
-        `❌ *Transfer couldn't complete*\n` +
-          `Your ${formatMoney(cur, amount)} has been refunded.\n\n` +
-          `Reason: ${payoutReason(message)}`,
-      );
+      // Post-payout messaging is best-effort — the money already moved.
+      this.logger.warn(`post-payout notify failed for ${txn.id}: ${(err as Error).message}`);
     }
   }
 
