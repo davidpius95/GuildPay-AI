@@ -40,6 +40,7 @@ export default async function Users() {
                 <th>Email</th>
                 <th>Market</th>
                 <th>KYC</th>
+                <th>Account</th>
                 <th>Balance</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -48,7 +49,7 @@ export default async function Users() {
             <tbody>
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="empty">
+                  <td colSpan={10} className="empty">
                     No users yet.
                   </td>
                 </tr>
@@ -64,6 +65,16 @@ export default async function Users() {
                     <span className={`badge ${u.kyc_status === 'verified' ? 'completed' : u.kyc_status === 'failed' ? 'failed' : 'pending'}`}>
                       {u.kyc_status}
                     </span>
+                  </td>
+                  <td className="mono n">
+                    {u.virtual_account_number ? (
+                      <>
+                        {u.virtual_account_number}
+                        <div style={{ fontSize: '0.8em', color: '#666' }}>{u.virtual_bank_name}</div>
+                      </>
+                    ) : (
+                      u.wallet_ref ?? '—'
+                    )}
                   </td>
                   <td className="mono">{u.balance ? money(u.currency ?? 'NGN', u.balance) : '—'}</td>
                   <td>

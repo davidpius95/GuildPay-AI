@@ -2,13 +2,12 @@
 
 import { revalidatePath } from 'next/cache';
 
-const API = process.env.API_INTERNAL_URL ?? 'http://guildpay-api:3001';
-const TOKEN = process.env.ADMIN_API_TOKEN ?? '';
-
 async function call(path: string, method: 'POST' | 'DELETE'): Promise<void> {
-  const res = await fetch(`${API}${path}`, {
+  const api = process.env.API_INTERNAL_URL ?? 'http://guildpay-api:3001';
+  const token = process.env.ADMIN_API_TOKEN ?? '';
+  const res = await fetch(`${api}${path}`, {
     method,
-    headers: { 'x-admin-token': TOKEN },
+    headers: { 'x-admin-token': token },
     cache: 'no-store',
   });
   if (!res.ok) throw new Error(`admin ${method} ${path} → ${res.status}`);

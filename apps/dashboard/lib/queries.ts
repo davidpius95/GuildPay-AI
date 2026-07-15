@@ -68,6 +68,7 @@ export interface UserRow {
   balance: string | null;
   currency: string | null;
   virtual_account_number: string | null;
+  virtual_bank_name: string | null;
 }
 
 export async function getUsers(): Promise<UserRow[]> {
@@ -75,7 +76,7 @@ export async function getUsers(): Promise<UserRow[]> {
     `select u.id, u.wa_phone, u.full_name, u.email, u.market, u.status, u.kyc_status,
             u.onboarding_step, u.created_at,
             w.reference as wallet_ref, w.balance::text as balance, w.currency,
-            w.virtual_account_number
+            w.virtual_account_number, w.virtual_bank_name
      from public.users u
      left join public.wallets w on w.user_id = u.id
      order by u.created_at desc
