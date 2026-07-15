@@ -157,7 +157,10 @@ export class BankTransferService {
         amount,
         narration: 'GuildPay transfer',
       });
-      if (res.status === 'failed') throw new Error('payout rejected');
+      if (res.status === 'failed') {
+        const raw = res.raw as { complete_message?: string; message?: string } | undefined;
+        throw new Error(raw?.complete_message ?? raw?.message ?? 'payout rejected by the bank');
+      }
 
       const completed = res.status === 'completed';
       await this.txns.setStatus(txn.id, completed ? 'completed' : 'pending');
@@ -192,8 +195,21 @@ export class BankTransferService {
       // Reverse the debit — no money left the wallet.
       await this.wallet.credit(wallet.id, amount, txn.id);
       await this.txns.setStatus(txn.id, 'failed');
-      this.logger.error(`bank transfer ${txn.id} payout failed: ${(err as Error).message}`);
-      await this.send(user, 'The bank transfer failed — your money has been refunded.');
+      const message = (err as Error).message;
+      this.logger.error(`bank transfer ${txn.id} payout failed: ${message}`);
+      await this.audit.record({
+        userId: user.id,
+        action: 'bank_transfer_failed',
+        entity: 'transaction',
+        entityId: txn.id,
+        metadata: { reason: payoutReason(message) },
+      });
+      await this.send(
+        user,
+        `❌ *Transfer couldn't complete*\n` +
+          `Your ${formatMoney(cur, amount)} has been refunded.\n\n` +
+          `Reason: ${payoutReason(message)}`,
+      );
     }
   }
 
@@ -269,6 +285,26 @@ export class BankTransferService {
   private async send(user: UserRow, body: string): Promise<void> {
     await this.channel.send({ to: user.wa_phone, kind: 'text', body });
   }
+}
+
+/**
+ * Turn a raw payout error into a user-facing reason. Strips our internal
+ * "Flutterwave POST /transfers failed:" wrapper and adds a short hint for the
+ * common account gates so the failure is self-diagnosing from the chat.
+ */
+export function payoutReason(message: string): string {
+  const raw = message.replace(/^Flutterwave\s+[A-Z]+\s+\S+\s+failed:\s*/i, '').trim() || 'Unknown error';
+  const lower = raw.toLowerCase();
+  if (lower.includes('not enabled to make transfers')) {
+    return `${raw}\n(Enable API transfers: Flutterwave → Settings → Business Preferences → Security.)`;
+  }
+  if (lower.includes('ip whitelist')) {
+    return `${raw}\n(Whitelist the server IP in Flutterwave settings.)`;
+  }
+  if (lower.includes('insufficient') && lower.includes('balance')) {
+    return `${raw}\n(Fund your Flutterwave merchant balance.)`;
+  }
+  return raw;
 }
 
 /** Resolve a free-text bank name to a single Bank, or null if none/ambiguous. */

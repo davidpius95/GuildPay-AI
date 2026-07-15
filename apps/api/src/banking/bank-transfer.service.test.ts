@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { BankTransferService, resolveBank } from './bank-transfer.service';
+import { BankTransferService, resolveBank, payoutReason } from './bank-transfer.service';
 import { PinService } from './pin.service';
 import type { ChannelAdapter } from '../channel/channel-adapter';
 import type { UsersRepository, UserRow } from '../database/users.repository';
@@ -86,6 +86,18 @@ describe('resolveBank', () => {
     expect(resolveBank(banks, 'access')?.code).toBe('044');
     expect(resolveBank(banks, 'bank')).toBeNull(); // ambiguous (both contain "bank")
     expect(resolveBank(banks, 'zenith')).toBeNull();
+  });
+});
+
+describe('payoutReason', () => {
+  it('strips the internal wrapper and surfaces the provider message', () => {
+    const r = payoutReason('Flutterwave POST /transfers failed: merchant is not enabled to make transfers.');
+    expect(r).toContain('merchant is not enabled to make transfers');
+    expect(r).not.toContain('Flutterwave POST');
+    expect(r).toContain('Business Preferences'); // hint for this gate
+  });
+  it('passes through an unknown reason unchanged', () => {
+    expect(payoutReason('some other error')).toBe('some other error');
   });
 });
 
