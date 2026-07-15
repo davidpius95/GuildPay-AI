@@ -9,6 +9,7 @@ import { TransferService } from './transfer.service';
 import { BankTransferService } from './bank-transfer.service';
 import { SnapToPayService } from './snap-to-pay.service';
 import { ReceiptService } from './receipt.service';
+import { KycService } from './kyc.service';
 import { MessageRouter } from './message-router.service';
 
 /**

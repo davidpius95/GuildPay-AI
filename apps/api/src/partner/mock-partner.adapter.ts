@@ -6,6 +6,8 @@ import type {
   BankTransferRequest,
   CreateVirtualAccountRequest,
   CreateVirtualAccountResult,
+  IdentityVerificationRequest,
+  IdentityVerificationResult,
   PartnerAdapter,
   TransferResult,
 } from './partner-adapter';
@@ -36,6 +38,21 @@ export class MockPartnerAdapter implements PartnerAdapter {
 
   async nameEnquiry(_accountNumber: string, _bankCode: string): Promise<NameEnquiryResult> {
     throw new Error('QAR has no external bank rail (name enquiry is NGN-only).');
+  }
+
+  /**
+   * Simulated QID/identity check for Qatar. Accepts any 11-digit id (mirrors the
+   * NGN 11-digit rule) so the demo is symmetric; never handles real PII.
+   */
+  async verifyIdentity(req: IdentityVerificationRequest): Promise<IdentityVerificationResult> {
+    const ok = /^\d{11}$/.test(req.idNumber);
+    return {
+      type: req.type,
+      status: ok ? 'verified' : 'failed',
+      reference: `mock-kyc-${Date.now()}`,
+      name: ok ? [req.firstName, req.lastName].filter(Boolean).join(' ') || undefined : undefined,
+      message: ok ? undefined : 'Simulated check: id must be 11 digits',
+    };
   }
 
   async bankTransfer(_req: BankTransferRequest): Promise<TransferResult> {

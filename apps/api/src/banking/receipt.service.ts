@@ -64,10 +64,11 @@ export class ReceiptService {
       .join('');
 
     const footerY = y + 40;
+    const height = footerY + 174; // footer block (140) + bottom margin (40)
 
-    return `<svg width="760" height="${footerY + 150}" viewBox="0 0 760 ${footerY + 150}" xmlns="http://www.w3.org/2000/svg">
-  <rect width="760" height="${footerY + 150}" fill="${BG}"/>
-  <rect x="40" y="40" width="680" height="${footerY + 70}" rx="28" fill="#ffffff"/>
+    return `<svg width="760" height="${height}" viewBox="0 0 760 ${height}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="760" height="${height}" fill="${BG}"/>
+  <rect x="40" y="40" width="680" height="${footerY - 62}" rx="28" fill="#ffffff"/>
 
   <!-- header -->
   <text x="72" y="118" font-family="DejaVu Sans" font-weight="800" font-size="34" fill="${INK}">Guild<tspan fill="${GREEN}">Pay</tspan> AI</text>
@@ -84,7 +85,7 @@ export class ReceiptService {
   ${rowSvg}
 
   <!-- footer -->
-  <rect x="40" y="${footerY - 6}" width="680" height="${190}" rx="28" fill="#0b141a"/>
+  <rect x="40" y="${footerY - 6}" width="680" height="140" rx="28" fill="#0b141a"/>
   <text x="380" y="${footerY + 40}" text-anchor="middle" font-family="DejaVu Sans" font-weight="700" font-size="22" fill="#ffffff">Guild<tspan fill="${GREEN}">Pay</tspan> AI</text>
   <text x="380" y="${footerY + 72}" text-anchor="middle" font-family="DejaVu Sans" font-size="18" fill="#8696a0">Your money, right inside WhatsApp.</text>
   <text x="380" y="${footerY + 100}" text-anchor="middle" font-family="DejaVu Sans" font-size="15" fill="#5a6b74">Send money, buy airtime &amp; pay bills — just by chatting.</text>

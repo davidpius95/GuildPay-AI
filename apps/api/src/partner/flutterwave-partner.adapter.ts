@@ -7,7 +7,14 @@ import type {
   BankTransferRequest,
   CreateVirtualAccountRequest,
   CreateVirtualAccountResult,
+  Dispute,
+  IdentityVerificationRequest,
+  IdentityVerificationResult,
+  ListPage,
+  MerchantBalance,
+  MerchantOpsAdapter,
   PartnerAdapter,
+  Settlement,
   TransferResult,
 } from './partner-adapter';
 
@@ -30,7 +37,7 @@ const DEFAULT_BASE_URL = 'https://api.flutterwave.com/v3';
  * caller per the `no-otp-no-money` rule.
  */
 @Injectable()
-export class FlutterwavePartnerAdapter implements PartnerAdapter {
+export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAdapter {
   readonly currency: Currency = 'NGN';
   private readonly logger = new Logger(FlutterwavePartnerAdapter.name);
 
@@ -77,6 +84,47 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter {
       account_bank: bankCode,
     });
     return { accountNumber, bankCode, accountName: data.account_name };
+  }
+
+  /**
+   * Verify a government ID (BVN/NIN). Read-only KYC check — never moves money.
+   * BVN uses Flutterwave's consent flow (`POST /bvn/verifications`): it returns a
+   * URL the user completes, and the final result arrives via the
+   * `bvn.verification.completed` webhook — so status here is `pending`. NIN uses
+   * the identity lookup (`GET /kyc/nin/:nin`) which resolves synchronously.
+   * The raw ID never appears in a log line or the returned message.
+   */
+  async verifyIdentity(req: IdentityVerificationRequest): Promise<IdentityVerificationResult> {
+    if (req.type === 'bvn') {
+      const redirectUrl = req.redirectUrl ?? this.config.get<string>('FLW_BVN_REDIRECT_URL');
+      const data = await this.flw<{ reference?: string; url?: string; status?: string }>(
+        'POST',
+        '/bvn/verifications',
+        {
+          bvn: req.idNumber,
+          firstname: req.firstName,
+          lastname: req.lastName,
+          redirect_url: redirectUrl,
+        },
+      );
+      return {
+        type: 'bvn',
+        // A consent URL means the user must still approve → pending.
+        status: data.url ? 'pending' : mapKycStatus(data.status),
+        reference: data.reference,
+        consentUrl: data.url,
+        message: data.url ? 'Awaiting BVN consent' : undefined,
+      };
+    }
+
+    // NIN — synchronous identity lookup.
+    const data = await this.flw<{
+      status?: string;
+      first_name?: string;
+      last_name?: string;
+    }>('GET', `/kyc/nin/${encodeURIComponent(req.idNumber)}`);
+    const name = [data.first_name, data.last_name].filter(Boolean).join(' ') || undefined;
+    return { type: 'nin', status: mapKycStatus(data.status), name };
   }
 
   /** Send money to an external bank (NIP). Final status arrives via the transfer.completed webhook. */
@@ -130,6 +178,43 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter {
     throw new Error('Per-user balance comes from WalletService (ledger), not Flutterwave.');
   }
 
+  // ── Merchant operations (admin dashboard) ──────────────────────────────────
+
+  /** Merchant float across every settlement currency (GET /balances). */
+  async getBalances(): Promise<MerchantBalance[]> {
+    const data = await this.flw<
+      Array<{ currency: string; available_balance: number; ledger_balance: number }>
+    >('GET', '/balances');
+    return data.map((b) => ({
+      currency: b.currency,
+      availableBalance: Number(b.available_balance ?? 0),
+      ledgerBalance: Number(b.ledger_balance ?? 0),
+    }));
+  }
+
+  /** Settlements from Flutterwave into the corporate bank account (GET /settlements). */
+  async listSettlements(page?: ListPage): Promise<Settlement[]> {
+    const data = await this.flw<FlwSettlement[]>('GET', withQuery('/settlements', page));
+    return data.map(mapSettlement);
+  }
+
+  async getSettlement(id: string): Promise<Settlement> {
+    const data = await this.flw<FlwSettlement>('GET', `/settlements/${encodeURIComponent(id)}`);
+    return mapSettlement(data);
+  }
+
+  /** Chargebacks/disputes raised by customers (GET /disputes). */
+  async listDisputes(page?: ListPage): Promise<Dispute[]> {
+    // FLW paginates disputes as { disputes: [...] } under data.
+    const data = await this.flw<{ disputes?: FlwDispute[] }>('GET', withQuery('/disputes', page));
+    return (data.disputes ?? []).map(mapDispute);
+  }
+
+  async getDispute(id: string): Promise<Dispute> {
+    const data = await this.flw<FlwDispute>('GET', `/disputes/${encodeURIComponent(id)}`);
+    return mapDispute(data);
+  }
+
   private async flw<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
     const key = this.config.get<string>('FLW_SECRET_KEY');
     if (!key) throw new Error('FLW_SECRET_KEY is not set');
@@ -160,6 +245,89 @@ function mapTransferStatus(status: string | undefined): TransferResult['status']
     default:
       return 'pending';
   }
+}
+
+function mapKycStatus(status: string | undefined): IdentityVerificationResult['status'] {
+  switch ((status ?? '').toLowerCase()) {
+    case 'verified':
+    case 'completed':
+    case 'success':
+    case 'successful':
+      return 'verified';
+    case 'failed':
+    case 'rejected':
+      return 'failed';
+    default:
+      return 'pending';
+  }
+}
+
+/** Raw Flutterwave shapes we map into our neutral Settlement/Dispute. */
+interface FlwSettlement {
+  id: number | string;
+  status?: string;
+  currency?: string;
+  gross_amount?: number;
+  app_fee?: number;
+  merchant_fee?: number;
+  net_amount?: number;
+  due_date?: string;
+  created_at?: string;
+  bank_name?: string;
+  account_number?: string;
+}
+
+interface FlwDispute {
+  id: number | string;
+  status?: string;
+  currency?: string;
+  amount?: number;
+  reason?: string;
+  customer?: { email?: string };
+  customer_email?: string;
+  due_date?: string;
+  created_at?: string;
+  tx_ref?: string;
+}
+
+function mapSettlement(s: FlwSettlement): Settlement {
+  return {
+    id: String(s.id),
+    status: s.status ?? 'unknown',
+    currency: s.currency ?? '',
+    grossAmount: Number(s.gross_amount ?? 0),
+    appFee: Number(s.app_fee ?? 0),
+    merchantFee: Number(s.merchant_fee ?? 0),
+    netAmount: Number(s.net_amount ?? 0),
+    dueDate: s.due_date ?? null,
+    createdAt: s.created_at ?? null,
+    bankName: s.bank_name ?? null,
+    accountNumber: s.account_number ?? null,
+  };
+}
+
+function mapDispute(d: FlwDispute): Dispute {
+  return {
+    id: String(d.id),
+    status: d.status ?? 'unknown',
+    currency: d.currency ?? '',
+    amount: Number(d.amount ?? 0),
+    reason: d.reason ?? null,
+    customerEmail: d.customer?.email ?? d.customer_email ?? null,
+    dueDate: d.due_date ?? null,
+    createdAt: d.created_at ?? null,
+    txRef: d.tx_ref ?? null,
+  };
+}
+
+/** Append ?page=&status= to a path, skipping undefined params. */
+function withQuery(path: string, page?: ListPage): string {
+  if (!page) return path;
+  const q = new URLSearchParams();
+  if (page.page) q.set('page', String(page.page));
+  if (page.status) q.set('status', page.status);
+  const s = q.toString();
+  return s ? `${path}?${s}` : path;
 }
 
 /** Drop undefined keys so optional fields (bvn, phone) aren't sent as null. */
