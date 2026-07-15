@@ -7,13 +7,16 @@ import { WalletsRepository, type WalletRow } from '../database/wallets.repositor
 import { TransactionsRepository, type TransactionRow } from '../database/transactions.repository';
 import { AuditRepository } from '../database/audit.repository';
 import { WalletService, InsufficientFundsError } from './wallet.service';
-import { OtpService } from './otp.service';
+import { PinService } from './pin.service';
 import { ReceiptService } from './receipt.service';
 import { formatMoney, phoneCandidates } from './money';
 
+const MAX_PIN_ATTEMPTS = 3;
+
 /**
- * P2P transfer flow: prepare → confirm → OTP → ledger move → receipts.
- * The AI only prepares; only a verified OTP calls WalletService.transfer.
+ * P2P transfer flow: prepare → confirm → PIN → ledger move → receipts.
+ * The AI only prepares; only a verified transaction PIN calls
+ * WalletService.transfer (the no-pin-no-money gate).
  */
 @Injectable()
 export class TransferService {
@@ -26,7 +29,7 @@ export class TransferService {
     private readonly txns: TransactionsRepository,
     private readonly audit: AuditRepository,
     private readonly wallet: WalletService,
-    private readonly otp: OtpService,
+    private readonly pins: PinService,
     private readonly receipts: ReceiptService,
   ) {}
 
@@ -73,12 +76,15 @@ export class TransferService {
     });
   }
 
-  /** Step 2 — user tapped Confirm: issue an OTP and move to pending_otp. */
+  /** Step 2 — user tapped Confirm: ask for the transaction PIN. */
   async confirm(user: UserRow, txn: TransactionRow): Promise<void> {
-    await this.txns.setStatus(txn.id, 'pending_otp');
-    const code = await this.otp.issue(user.id, txn.id);
-    // DEMO: code delivered in-channel; production would use out-of-band SMS/auth.
-    await this.send(user, `🔐 Your GuildPay code is *${code}*.\nReply with it to complete the transfer.`);
+    await this.txns.setStatus(txn.id, 'pending_otp'); // status name kept for schema compat; gate is the PIN
+    await this.send(
+      user,
+      user.pin_hash
+        ? '🔐 Enter your *4-digit transaction PIN* to complete the transfer, or type *CANCEL*.'
+        : "🔐 You don't have a transaction PIN yet.\nReply with a *new 4-digit PIN* to set it — then I'll ask you to enter it to approve this transfer.",
+    );
   }
 
   async cancel(user: UserRow, txn: TransactionRow): Promise<void> {
@@ -86,26 +92,15 @@ export class TransferService {
     await this.send(user, 'Transfer cancelled. No money has moved.');
   }
 
-  /** Step 3 — user replied with a code. Verify → move money → receipts. */
-  async submitOtp(user: UserRow, wallet: WalletRow, code: string): Promise<void> {
-    const result = await this.otp.verify(user.id, code);
-    if (!result.ok) {
-      await this.send(
-        user,
-        result.reason === 'too_many_attempts'
-          ? 'Too many wrong attempts — the code is now void. Start the transfer again.'
-          : result.reason === 'no_active_code'
-            ? 'That code has expired. Please start the transfer again.'
-            : 'That code is incorrect. Try again.',
-      );
-      return;
-    }
-
-    const txn = result.transactionId ? await this.txns.findById(result.transactionId) : null;
-    if (!txn || txn.status !== 'pending_otp') {
+  /** Step 3 — user replied with their PIN. Verify → move money → receipts. */
+  async submitPin(user: UserRow, wallet: WalletRow, pin: string): Promise<void> {
+    const txn = await this.txns.findLatestByStatus(wallet.id, ['pending_otp']);
+    if (!txn || txn.type !== 'p2p_transfer') {
       await this.send(user, 'That transfer is no longer pending.');
       return;
     }
+    if (!(await this.pinGate(user, txn, pin))) return;
+
     const recipient = txn.recipient_ref ? await this.wallets.findByReference(txn.recipient_ref) : null;
     if (!recipient) {
       await this.txns.setStatus(txn.id, 'failed');
@@ -180,6 +175,36 @@ export class TransferService {
           : 'The transfer failed and no money moved.',
       );
     }
+  }
+
+  /**
+   * The PIN gate — the ONLY path to money movement. First-time users set their
+   * PIN here (hashed; raw PIN never stored/logged), then must enter it again.
+   * 3 wrong attempts cancel the transaction.
+   */
+  private async pinGate(user: UserRow, txn: TransactionRow, pin: string): Promise<boolean> {
+    if (!this.pins.isValidFormat(pin)) {
+      await this.send(user, 'Your PIN is *4 digits*. Try again, or type *CANCEL*.');
+      return false;
+    }
+    if (!user.pin_hash) {
+      await this.users.update(user.id, { pin_hash: this.pins.hash(pin) });
+      await this.audit.record({ userId: user.id, actor: 'user', action: 'pin_set', entity: 'user', entityId: user.id });
+      await this.send(user, '✅ PIN saved.\n\n🔐 Now enter your PIN to approve the transfer.');
+      return false; // must enter it again — setting a PIN never approves money
+    }
+    if (!this.pins.verify(pin, user.pin_hash)) {
+      await this.audit.record({ userId: user.id, actor: 'user', action: 'pin_failed', entity: 'transaction', entityId: txn.id });
+      const fails = await this.audit.countByEntityAction(txn.id, 'pin_failed');
+      if (fails >= MAX_PIN_ATTEMPTS) {
+        await this.txns.setStatus(txn.id, 'cancelled');
+        await this.send(user, '❌ Too many wrong attempts — the transfer was cancelled. No money moved.');
+      } else {
+        await this.send(user, `Incorrect PIN (${fails}/${MAX_PIN_ATTEMPTS}). Try again, or type *CANCEL*.`);
+      }
+      return false;
+    }
+    return true;
   }
 
   private async resolveRecipient(ref: string, sender: WalletRow): Promise<WalletRow | null> {

@@ -6,6 +6,7 @@ import type { UserRow, UsersRepository } from '../database/users.repository';
 import type { WalletsRepository } from '../database/wallets.repository';
 import type { AuditRepository } from '../database/audit.repository';
 import type { PartnerService } from '../partner/partner.service';
+import { PinService } from '../banking/pin.service';
 
 function baseUser(waPhone: string): UserRow {
   return {
@@ -64,7 +65,7 @@ function harness() {
     forCurrency: vi.fn(() => ({ createVirtualAccount })),
   } as unknown as PartnerService;
 
-  const svc = new OnboardingService(channel, users, wallets, audit, partners);
+  const svc = new OnboardingService(channel, users, wallets, audit, partners, new PinService());
   return { svc, sent, users, wallets, partners, createVirtualAccount };
 }
 
@@ -73,6 +74,10 @@ function msg(over: Partial<InboundMessage>): InboundMessage {
 }
 
 const last = (sent: OutboundMessage[]) => sent[sent.length - 1]!;
+const lastBody = (sent: OutboundMessage[]): string => {
+  const m = last(sent);
+  return 'body' in m ? m.body : '';
+};
 
 describe('OnboardingService', () => {
   it('walks a new user through to an active wallet', async () => {
@@ -85,11 +90,11 @@ describe('OnboardingService', () => {
 
     // language
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'lang_en' }));
-    expect((last(h.sent) as any).body).toContain('full name');
+    expect(lastBody(h.sent)).toContain('full name');
 
     // name → asks for email
     await h.svc.handle(msg({ text: 'Ada Lovelace' }));
-    expect((last(h.sent) as any).body).toContain('email');
+    expect(lastBody(h.sent)).toContain('email');
 
     // email → market buttons
     await h.svc.handle(msg({ text: 'ada@example.com' }));
@@ -97,23 +102,30 @@ describe('OnboardingService', () => {
 
     // market NG → asks for BVN
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'market_ng' }));
-    expect((last(h.sent) as any).body).toContain('BVN');
+    expect(lastBody(h.sent)).toContain('BVN');
 
-    // invalid KYC is rejected, valid KYC advances to consent
+    // invalid KYC is rejected, valid KYC advances to the PIN step
     await h.svc.handle(msg({ text: '123' }));
-    expect((last(h.sent) as any).body).toContain("doesn't look right");
+    expect(lastBody(h.sent)).toContain("doesn't look right");
     await h.svc.handle(msg({ text: '12345678901' }));
+    expect(lastBody(h.sent)).toContain('PIN');
+
+    // invalid PIN rejected, valid 4-digit PIN advances to consent
+    await h.svc.handle(msg({ text: '12' }));
+    expect(lastBody(h.sent)).toContain('4 digits');
+    await h.svc.handle(msg({ text: '4821' }));
     expect(last(h.sent).kind).toBe('interactive'); // consent buttons
+    expect(lastBody(h.sent)).toContain('PIN saved');
 
     // consent → wallet created + welcome
     const handled = await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'consent_yes' }));
     expect(handled).toBe(true);
     expect(h.wallets.create).toHaveBeenCalledOnce();
     expect(h.createVirtualAccount).toHaveBeenCalledOnce(); // NGN provisions a NUBAN
-    expect((last(h.sent) as any).body).toContain("all set");
-    expect((last(h.sent) as any).body).toContain('GPA-NG-');
-    expect((last(h.sent) as any).body).toContain('9900001111'); // funding account shown
-    expect((last(h.sent) as any).body).toContain('Wema Bank');
+    expect(lastBody(h.sent)).toContain("all set");
+    expect(lastBody(h.sent)).toContain('GPA-NG-');
+    expect(lastBody(h.sent)).toContain('9900001111'); // funding account shown
+    expect(lastBody(h.sent)).toContain('Wema Bank');
   });
 
   it('QAR onboarding provisions a simulated account and shows it', async () => {
@@ -124,10 +136,11 @@ describe('OnboardingService', () => {
     await h.svc.handle(msg({ text: 'noor@example.com' }));
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'market_qa' })); // Qatar
     await h.svc.handle(msg({ text: '12345678901' })); // QID
+    await h.svc.handle(msg({ text: '4821' })); // transaction PIN
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'consent_yes' }));
     expect(h.wallets.create).toHaveBeenCalledWith(expect.objectContaining({ currency: 'QAR' }));
     expect(h.createVirtualAccount).toHaveBeenCalledOnce();
-    expect((last(h.sent) as any).body).toContain('GPA-QA-');
+    expect(lastBody(h.sent)).toContain('GPA-QA-');
   });
 
   it('returns false (not handled) once onboarded', async () => {

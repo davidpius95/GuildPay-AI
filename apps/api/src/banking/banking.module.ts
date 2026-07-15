@@ -4,6 +4,7 @@ import { AiModule } from '../ai/ai.module';
 import { PartnerModule } from '../partner/partner.module';
 import { WalletService } from './wallet.service';
 import { OtpService } from './otp.service';
+import { PinService } from './pin.service';
 import { OrchestratorService } from './orchestrator.service';
 import { TransferService } from './transfer.service';
 import { BankTransferService } from './bank-transfer.service';
@@ -22,11 +23,13 @@ import { MessageRouter } from './message-router.service';
   providers: [
     WalletService,
     OtpService,
+    PinService,
     OrchestratorService,
     TransferService,
     BankTransferService,
     SnapToPayService,
     ReceiptService,
+    KycService,
     MessageRouter,
   ],
   exports: [MessageRouter, WalletService, OtpService],

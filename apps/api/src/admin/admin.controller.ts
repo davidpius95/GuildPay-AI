@@ -7,10 +7,13 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AdminService } from './admin.service';
+import { OpsService } from './ops.service';
+import type { ListPage } from '../partner/partner-adapter';
 
 /**
  * Admin API (/v1/admin, /v1/demo). Publicly routed, so every call requires the
@@ -22,6 +25,7 @@ export class AdminController {
   constructor(
     private readonly config: ConfigService,
     private readonly admin: AdminService,
+    private readonly ops: OpsService,
   ) {}
 
   private assertToken(token: string | undefined): void {
@@ -60,6 +64,51 @@ export class AdminController {
     await this.admin.demoResetAll();
     return { status: 'ok' };
   }
+
+  // ── Merchant operations (Flutterwave) ──────────────────────────────────────
+
+  @Get('admin/balances')
+  async balances(@Headers('x-admin-token') token?: string) {
+    this.assertToken(token);
+    return this.ops.getBalances();
+  }
+
+  @Get('admin/settlements')
+  async settlements(
+    @Query('page') page?: string,
+    @Query('status') status?: string,
+    @Headers('x-admin-token') token?: string,
+  ) {
+    this.assertToken(token);
+    return this.ops.listSettlements(pageParams(page, status));
+  }
+
+  @Get('admin/settlements/:id')
+  async settlement(@Param('id') id: string, @Headers('x-admin-token') token?: string) {
+    this.assertToken(token);
+    return this.ops.getSettlement(id);
+  }
+
+  @Get('admin/disputes')
+  async disputes(
+    @Query('page') page?: string,
+    @Query('status') status?: string,
+    @Headers('x-admin-token') token?: string,
+  ) {
+    this.assertToken(token);
+    return this.ops.listDisputes(pageParams(page, status));
+  }
+
+  @Get('admin/disputes/:id')
+  async dispute(@Param('id') id: string, @Headers('x-admin-token') token?: string) {
+    this.assertToken(token);
+    return this.ops.getDispute(id);
+  }
+}
+
+function pageParams(page?: string, status?: string): ListPage {
+  const n = page ? Number(page) : undefined;
+  return { page: n && Number.isFinite(n) ? n : undefined, status: status || undefined };
 }
 
 function constantTimeEqual(a: string, b: string): boolean {

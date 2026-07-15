@@ -36,6 +36,7 @@ export type UserUpdate = Partial<
     | 'currency'
     | 'kyc_id'
     | 'kyc_status'
+    | 'pin_hash'
     | 'status'
     | 'onboarding_step'
   >

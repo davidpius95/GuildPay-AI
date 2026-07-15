@@ -23,6 +23,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <a className="link" href="/users">
             Users
           </a>
+          <a className="link" href="/balances">
+            Balances
+          </a>
+          <a className="link" href="/settlements">
+            Settlements
+          </a>
+          <a className="link" href="/disputes">
+            Disputes
+          </a>
           <div className="spacer" />
           <div className="live">
             <span className="dot" /> live

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { BankTransferService, resolveBank } from './bank-transfer.service';
+import { PinService } from './pin.service';
 import type { ChannelAdapter } from '../channel/channel-adapter';
 import type { UsersRepository, UserRow } from '../database/users.repository';
 import type { WalletRow } from '../database/wallets.repository';
@@ -7,8 +8,10 @@ import type { TransactionsRepository } from '../database/transactions.repository
 import type { AuditRepository } from '../database/audit.repository';
 import type { WalletService } from './wallet.service';
 import { InsufficientFundsError } from './wallet.service';
-import type { OtpService } from './otp.service';
 import type { PartnerService } from '../partner/partner.service';
+
+const pins = new PinService(); // real crypto — the gate under test
+const PIN_HASH = pins.hash('1234');
 
 const wallet = {
   id: 'w1',
@@ -19,31 +22,42 @@ const wallet = {
   balance: '10000',
   txn_limit: '50000',
 } as unknown as WalletRow;
-const user = { id: 'u1', wa_phone: '2348000000001', full_name: 'Sender' } as unknown as UserRow;
+const user = { id: 'u1', wa_phone: '2348000000001', full_name: 'Sender', pin_hash: PIN_HASH } as unknown as UserRow;
 
 const banks = [
   { code: '044', name: 'Access Bank' },
   { code: '058', name: 'GTBank' },
 ];
 
-function make(opts: { transferStatus?: 'completed' | 'pending' | 'failed'; debitThrows?: boolean } = {}) {
+const pendingTxn = {
+  id: 'txn1',
+  type: 'bank_transfer',
+  status: 'pending_otp',
+  amount: '2000',
+  currency: 'NGN',
+  recipient_ref: '0690000031',
+  recipient_name: 'Ada Bank',
+  bank_code: '044',
+};
+
+function make(
+  opts: { transferStatus?: 'completed' | 'pending' | 'failed'; debitThrows?: boolean; failCount?: number } = {},
+) {
   const channel = { send: vi.fn(async () => undefined) } as unknown as ChannelAdapter;
-  const users = { findById: vi.fn(async () => user) } as unknown as UsersRepository;
+  const users = {
+    findById: vi.fn(async () => user),
+    update: vi.fn(async () => user),
+  } as unknown as UsersRepository;
   const txns = {
     create: vi.fn(async () => ({ id: 'txn1' })),
-    findById: vi.fn(async () => ({
-      id: 'txn1',
-      type: 'bank_transfer',
-      status: 'pending_otp',
-      amount: '2000',
-      currency: 'NGN',
-      recipient_ref: '0690000031',
-      recipient_name: 'Ada Bank',
-      bank_code: '044',
-    })),
+    findById: vi.fn(async () => pendingTxn),
+    findLatestByStatus: vi.fn(async () => pendingTxn),
     setStatus: vi.fn(async () => undefined),
   } as unknown as TransactionsRepository;
-  const audit = { record: vi.fn(async () => undefined) } as unknown as AuditRepository;
+  const audit = {
+    record: vi.fn(async () => undefined),
+    countByEntityAction: vi.fn(async () => opts.failCount ?? 1),
+  } as unknown as AuditRepository;
   const wallet$ = {
     debit: opts.debitThrows
       ? vi.fn(async () => {
@@ -53,7 +67,6 @@ function make(opts: { transferStatus?: 'completed' | 'pending' | 'failed'; debit
     credit: vi.fn(async () => '10000'),
     getBalance: vi.fn(async () => '8000'),
   } as unknown as WalletService;
-  const otp = { issue: vi.fn(async () => '123456'), verify: vi.fn() } as unknown as OtpService;
   const bankTransfer = vi.fn(async () => ({ providerRef: 'flw1', status: opts.transferStatus ?? 'completed' }));
   const adapter = {
     listBanks: vi.fn(async () => banks),
@@ -63,8 +76,8 @@ function make(opts: { transferStatus?: 'completed' | 'pending' | 'failed'; debit
   const partners = { forCurrency: vi.fn(() => adapter) } as unknown as PartnerService;
   const receipts = { render: vi.fn(() => Buffer.from('png')) } as unknown as import('./receipt.service').ReceiptService;
 
-  const svc = new BankTransferService(channel, users, txns, audit, wallet$, otp, partners, receipts);
-  return { svc, channel, txns, wallet: wallet$, otp, bankTransfer, adapter };
+  const svc = new BankTransferService(channel, users, txns, audit, wallet$, pins, partners, receipts);
+  return { svc, channel, txns, wallet: wallet$, users, audit, bankTransfer, adapter };
 }
 
 describe('resolveBank', () => {
@@ -76,7 +89,7 @@ describe('resolveBank', () => {
   });
 });
 
-describe('BankTransferService — no-otp-no-money gate', () => {
+describe('BankTransferService — no-pin-no-money gate', () => {
   let h: ReturnType<typeof make>;
   beforeEach(() => {
     h = make();
@@ -98,16 +111,29 @@ describe('BankTransferService — no-otp-no-money gate', () => {
     expect(h.bankTransfer).not.toHaveBeenCalled();
   });
 
-  it('a WRONG code moves NO money', async () => {
-    (h.otp.verify as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, reason: 'wrong_code' });
-    await h.svc.submitOtp(user, wallet, '000000');
+  it('a WRONG PIN moves NO money and is audited', async () => {
+    await h.svc.submitPin(user, wallet, '0000');
     expect(h.wallet.debit).not.toHaveBeenCalled();
     expect(h.bankTransfer).not.toHaveBeenCalled();
+    expect(h.audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'pin_failed' }));
   });
 
-  it('a VALID code debits then pays out and completes', async () => {
-    (h.otp.verify as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, transactionId: 'txn1' });
-    await h.svc.submitOtp(user, wallet, '123456');
+  it('3 wrong attempts cancel the transaction', async () => {
+    const f = make({ failCount: 3 });
+    await f.svc.submitPin(user, wallet, '0000');
+    expect(f.wallet.debit).not.toHaveBeenCalled();
+    expect(f.txns.setStatus).toHaveBeenCalledWith('txn1', 'cancelled');
+  });
+
+  it('a user with NO PIN sets it first — setting the PIN moves NO money', async () => {
+    const noPinUser = { ...user, pin_hash: null } as unknown as UserRow;
+    await h.svc.submitPin(noPinUser, wallet, '4821');
+    expect(h.users.update).toHaveBeenCalledWith('u1', expect.objectContaining({ pin_hash: expect.any(String) }));
+    expect(h.wallet.debit).not.toHaveBeenCalled();
+  });
+
+  it('the CORRECT PIN debits then pays out and completes', async () => {
+    await h.svc.submitPin(user, wallet, '1234');
     expect(h.wallet.debit).toHaveBeenCalledWith('w1', 2000, 'txn1');
     expect(h.bankTransfer).toHaveBeenCalledOnce();
     expect(h.txns.setStatus).toHaveBeenCalledWith('txn1', 'completed');
@@ -115,8 +141,7 @@ describe('BankTransferService — no-otp-no-money gate', () => {
 
   it('reverses the debit when the payout fails', async () => {
     const f = make({ transferStatus: 'failed' });
-    (f.otp.verify as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, transactionId: 'txn1' });
-    await f.svc.submitOtp(user, wallet, '123456');
+    await f.svc.submitPin(user, wallet, '1234');
     expect(f.wallet.debit).toHaveBeenCalledOnce();
     expect(f.wallet.credit).toHaveBeenCalledWith('w1', 2000, 'txn1'); // refunded
     expect(f.txns.setStatus).toHaveBeenCalledWith('txn1', 'failed');
@@ -124,8 +149,7 @@ describe('BankTransferService — no-otp-no-money gate', () => {
 
   it('insufficient funds fails without calling the payout', async () => {
     const f = make({ debitThrows: true });
-    (f.otp.verify as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, transactionId: 'txn1' });
-    await f.svc.submitOtp(user, wallet, '123456');
+    await f.svc.submitPin(user, wallet, '1234');
     expect(f.bankTransfer).not.toHaveBeenCalled();
     expect(f.txns.setStatus).toHaveBeenCalledWith('txn1', 'failed');
   });

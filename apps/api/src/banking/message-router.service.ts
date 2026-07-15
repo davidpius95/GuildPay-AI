@@ -13,6 +13,7 @@ import { OrchestratorService } from './orchestrator.service';
 import { TransferService } from './transfer.service';
 import { BankTransferService } from './bank-transfer.service';
 import { SnapToPayService } from './snap-to-pay.service';
+import { KycService } from './kyc.service';
 import { formatMoney } from './money';
 
 /**
@@ -35,6 +36,7 @@ export class MessageRouter {
     private readonly transfer: TransferService,
     private readonly bankTransfer: BankTransferService,
     private readonly snapToPay: SnapToPayService,
+    private readonly kyc: KycService,
   ) {}
 
   /** Snap-to-pay: an onboarded user sent a photo. Vision prefills a bank transfer. */
@@ -55,13 +57,13 @@ export class MessageRouter {
     const text = (msg.text ?? '').trim();
     const lower = text.toLowerCase();
 
-    // ── deterministic: awaiting an OTP ──────────────────────────────────────
+    // ── deterministic: awaiting the transaction PIN ─────────────────────────
     const pendingOtp = await this.txns.findLatestByStatus(wallet.id, ['pending_otp']);
     if (pendingOtp) {
       const svc = pendingOtp.type === 'bank_transfer' ? this.bankTransfer : this.transfer;
       if (lower === 'cancel') return svc.cancel(user, pendingOtp);
-      if (/^\d{4,8}$/.test(text)) return svc.submitOtp(user, wallet, text);
-      return this.send(user, 'Please reply with the code I sent, or type *CANCEL*.');
+      if (/^\d{4}$/.test(text)) return svc.submitPin(user, wallet, text);
+      return this.send(user, 'Please reply with your *4-digit PIN*, or type *CANCEL*.');
     }
 
     // ── deterministic: awaiting Confirm/Cancel ──────────────────────────────
@@ -92,7 +94,20 @@ export class MessageRouter {
         return this.sendBalance(user, wallet);
       case 'fund':
         return this.handleFundIntent(user, wallet, intent.amount);
-      case 'p2p_transfer':
+      case 'p2p_transfer': {
+        // The LLM sometimes labels a bank payout as P2P. A 10-digit ref is a NUBAN
+        // (NG phones are 11 digits) — with a bank name present it's a bank transfer.
+        const ref = intent.recipientRef?.replace(/\D/g, '') ?? '';
+        if (intent.amount && /^\d{10}$/.test(ref) && intent.bankName) {
+          return this.bankTransfer.start(user, wallet, intent.amount, ref, intent.bankName);
+        }
+        if (intent.amount && /^\d{10}$/.test(ref)) {
+          return this.send(
+            user,
+            `That looks like a *bank account number*. Which bank is ${ref} with?\n` +
+              `Send it in one line, e.g. *send ${intent.amount} to ${ref} GTBank*.`,
+          );
+        }
         if (intent.amount && intent.recipientRef) {
           return this.transfer.start(user, wallet, intent.amount, intent.recipientRef);
         }
@@ -102,18 +117,23 @@ export class MessageRouter {
             ? 'How much would you like to send?'
             : 'Who should I send it to? Share their number or GuildPay reference.',
         );
-      case 'bank_transfer':
-        if (intent.amount && intent.accountNumber && intent.bankName) {
-          return this.bankTransfer.start(user, wallet, intent.amount, intent.accountNumber, intent.bankName);
+      }
+      case 'bank_transfer': {
+        const account = intent.accountNumber ?? intent.recipientRef?.replace(/\D/g, '') ?? null;
+        if (intent.amount && account && /^\d{10}$/.test(account) && intent.bankName) {
+          return this.bankTransfer.start(user, wallet, intent.amount, account, intent.bankName);
         }
         return this.send(
           user,
           !intent.amount
             ? 'How much would you like to send?'
-            : !intent.accountNumber
-              ? "What's the account number?"
+            : !account
+              ? "What's the 10-digit account number?"
               : 'Which bank is that account with?',
         );
+      }
+      case 'verify_identity':
+        return this.handleVerifyIdentity(user, wallet, intent.idType, intent.idNumber);
       default:
         try {
           return this.send(user, await this.ai.chat(text));
@@ -200,6 +220,21 @@ export class MessageRouter {
       return this.fund(user, wallet, amount);
     }
     return this.send(user, 'How much would you like to add? e.g. *fund 5000*.');
+  }
+
+  /** Verify a user's BVN/NIN on demand. Defaults the id type from the wallet's market. */
+  private async handleVerifyIdentity(
+    user: UserRow,
+    wallet: WalletRow,
+    idType: 'bvn' | 'nin' | null,
+    idNumber: string | null,
+  ): Promise<void> {
+    // NGN → BVN by default; QAR (simulated) → NIN stands in for QID.
+    const type = idType ?? (wallet.currency === 'NGN' ? 'bvn' : 'nin');
+    if (!idNumber) {
+      return this.send(user, `Sure — please send your 11-digit *${type.toUpperCase()}* (numbers only) to verify.`);
+    }
+    return this.kyc.verify(user, wallet.currency as Currency, type, idNumber);
   }
 
   /** Demo funding — simulated credit, no OTP (money coming in). */

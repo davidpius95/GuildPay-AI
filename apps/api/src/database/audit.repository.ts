@@ -28,4 +28,13 @@ export class AuditRepository {
       ],
     );
   }
+
+  /** How many times an action has been recorded for an entity (e.g. pin_failed per txn). */
+  async countByEntityAction(entityId: string, action: string): Promise<number> {
+    const { rows } = await this.pool.query<{ n: string }>(
+      'select count(*)::text as n from public.audit_events where entity_id = $1 and action = $2',
+      [entityId, action],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
 }

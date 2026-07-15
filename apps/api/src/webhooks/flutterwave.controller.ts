@@ -86,6 +86,12 @@ export class FlutterwaveController {
           this.logger.log(`bvn.verification.completed status=${body.data?.status}`);
           break;
         default:
+          // Chargeback/dispute notifications: FLW uses a few event names — record
+          // them for the admin Disputes view and reconciliation (no user money moves).
+          if (event.includes('dispute') || event.includes('chargeback')) {
+            await this.handleDisputeEvent(event, body.data ?? {});
+            break;
+          }
           this.logger.log(`unhandled Flutterwave event: ${event}`);
       }
     } catch (err) {
@@ -198,6 +204,18 @@ export class FlutterwaveController {
       });
     }
     this.logger.log(`transfer ${txn.id} failed — reversed ${amount}`);
+  }
+
+  /** Record a chargeback/dispute event for the admin Disputes view + reconciliation. */
+  private async handleDisputeEvent(event: string, data: NonNullable<FlwWebhook['data']>): Promise<void> {
+    const disputeId = data.id !== undefined ? String(data.id) : null;
+    await this.audit.record({
+      action: 'dispute_event',
+      entity: 'transaction',
+      entityId: disputeId ?? undefined,
+      metadata: { event, disputeId, status: data.status ?? null, txRef: data.tx_ref ?? null },
+    });
+    this.logger.warn(`dispute event: ${event} id=${disputeId ?? '—'} status=${data.status ?? '—'}`);
   }
 }
 

@@ -8,6 +8,7 @@ import { WalletsRepository } from '../database/wallets.repository';
 import { AuditRepository } from '../database/audit.repository';
 import { PartnerService } from '../partner/partner.service';
 import type { CreateVirtualAccountResult } from '../partner/partner-adapter';
+import { PinService } from '../banking/pin.service';
 
 const MARKET_CURRENCY: Record<Market, Currency> = { NG: 'NGN', QA: 'QAR' };
 const KYC_LABEL: Record<Market, string> = { NG: 'BVN', QA: 'QID' };
@@ -28,6 +29,7 @@ export class OnboardingService {
     private readonly wallets: WalletsRepository,
     private readonly audit: AuditRepository,
     private readonly partners: PartnerService,
+    private readonly pins: PinService,
   ) {}
 
   async handle(msg: InboundMessage): Promise<boolean> {
@@ -51,6 +53,8 @@ export class OnboardingService {
         return this.stepMarket(user, msg);
       case 'kyc':
         return this.stepKyc(user, msg);
+      case 'pin':
+        return this.stepPin(user, msg);
       case 'consent':
         return this.stepConsent(user, msg);
       default:
@@ -123,8 +127,26 @@ export class OnboardingService {
       );
       return true;
     }
-    await this.users.update(user.id, { kyc_id: kyc, onboarding_step: 'consent' });
-    await this.buttons(user.wa_phone, 'By continuing you agree to GuildPay’s Terms & Privacy. Create your wallet now?', [
+    await this.users.update(user.id, { kyc_id: kyc, onboarding_step: 'pin' });
+    await this.text(
+      user.wa_phone,
+      '🔐 Now set your *4-digit transaction PIN* (numbers only).\n\n' +
+        "You'll enter this PIN to approve every transfer, so keep it secret. " +
+        'You can delete your message after I confirm it.',
+    );
+    return true;
+  }
+
+  /** Set the 4-digit transaction PIN (hashed; the raw PIN is never stored or logged). */
+  private async stepPin(user: UserRow, msg: InboundMessage): Promise<boolean> {
+    const pin = (msg.text ?? '').replace(/\s/g, '');
+    if (!this.pins.isValidFormat(pin)) {
+      await this.text(user.wa_phone, 'Your PIN must be exactly *4 digits* (e.g. 4821). Please try again.');
+      return true;
+    }
+    await this.users.update(user.id, { pin_hash: this.pins.hash(pin), onboarding_step: 'consent' });
+    await this.audit.record({ userId: user.id, actor: 'user', action: 'pin_set', entity: 'user', entityId: user.id });
+    await this.buttons(user.wa_phone, '✅ PIN saved.\n\nBy continuing you agree to GuildPay’s Terms & Privacy. Create your wallet now?', [
       { id: 'consent_yes', title: 'I agree ✅' },
       { id: 'consent_no', title: 'Cancel' },
     ]);
