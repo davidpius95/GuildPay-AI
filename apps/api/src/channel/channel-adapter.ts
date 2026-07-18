@@ -22,7 +22,23 @@ export interface OutboundImage {
   caption?: string;
 }
 
-export type OutboundMessage = OutboundText | OutboundInteractive | OutboundImage;
+/**
+ * A WhatsApp Flow message — opens a native modal (data-exchange endpoint Flow).
+ * Used for secure PIN entry: the PIN is collected inside the modal and returned
+ * to our encrypted Flow endpoint, never appearing in the chat thread.
+ */
+export interface OutboundFlow {
+  to: string;
+  kind: 'flow';
+  body: string; // message text shown above the flow button
+  flowId: string; // WhatsApp Flow ID from Meta (WHATSAPP_PIN_FLOW_ID)
+  flowToken: string; // signed token binding the response to a pending txn
+  screenId: string; // first screen to open, e.g. 'PIN_SCREEN'
+  buttonTitle: string; // CTA label, e.g. 'Verify Transaction'
+  mode?: 'draft' | 'published'; // draft lets you test before publishing
+}
+
+export type OutboundMessage = OutboundText | OutboundInteractive | OutboundImage | OutboundFlow;
 
 /**
  * ChannelAdapter — abstracts the WhatsApp transport so the app is agnostic to

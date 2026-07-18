@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import type { InboundMessage } from '@guildpay/shared';
 import type {
   ChannelAdapter,
+  OutboundFlow,
   OutboundInteractive,
   OutboundMessage,
   OutboundText,
@@ -204,8 +205,30 @@ export class MetaCloudAdapter implements ChannelAdapter {
     };
   }
 
-  private buildBody(message: OutboundText | OutboundInteractive): Record<string, unknown> {
+  private buildBody(message: OutboundText | OutboundInteractive | OutboundFlow): Record<string, unknown> {
     const base = { messaging_product: 'whatsapp', recipient_type: 'individual', to: message.to };
+    if (message.kind === 'flow') {
+      return {
+        ...base,
+        type: 'interactive',
+        interactive: {
+          type: 'flow',
+          body: { text: message.body },
+          action: {
+            name: 'flow',
+            parameters: {
+              flow_message_version: '3',
+              flow_id: message.flowId,
+              flow_token: message.flowToken,
+              flow_cta: message.buttonTitle,
+              flow_action: 'navigate',
+              flow_action_payload: { screen: message.screenId },
+              ...(message.mode === 'draft' ? { mode: 'draft' } : {}),
+            },
+          },
+        },
+      };
+    }
     if (message.kind === 'interactive') {
       return {
         ...base,

@@ -1,15 +1,16 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigService } from '@nestjs/config';
 import { MetaCloudAdapter } from './meta-cloud.adapter';
 
 const APP_SECRET = 'test-app-secret';
 const VERIFY_TOKEN = 'verify-me';
 
-function makeAdapter(): MetaCloudAdapter {
+function makeAdapter(extra: Record<string, string> = {}): MetaCloudAdapter {
   const values: Record<string, string> = {
     META_APP_SECRET: APP_SECRET,
     META_WEBHOOK_VERIFY_TOKEN: VERIFY_TOKEN,
+    ...extra,
   };
   const config = { get: (k: string) => values[k] } as unknown as ConfigService;
   return new MetaCloudAdapter(config);
@@ -94,5 +95,51 @@ describe('MetaCloudAdapter.parseInbound', () => {
       ],
     });
     expect(msgs[0]).toMatchObject({ type: 'interactive', interactiveReplyId: 'confirm' });
+  });
+});
+
+describe('MetaCloudAdapter.send flow', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends an interactive flow body', async () => {
+    const a = makeAdapter({ META_WHATSAPP_TOKEN: 'tok', META_PHONE_NUMBER_ID: 'pn1' });
+    const fetchMock = vi.fn(
+      async (_url: string, _init: RequestInit) => ({ ok: true, text: async () => '' }) as unknown as Response,
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await a.send({
+      to: '234800',
+      kind: 'flow',
+      body: 'Approve?',
+      flowId: 'flow-123',
+      flowToken: 'tok-abc',
+      screenId: 'PIN_SCREEN',
+      buttonTitle: 'Verify Transaction',
+      mode: 'draft',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(body).toMatchObject({
+      type: 'interactive',
+      interactive: {
+        type: 'flow',
+        body: { text: 'Approve?' },
+        action: {
+          name: 'flow',
+          parameters: {
+            flow_id: 'flow-123',
+            flow_token: 'tok-abc',
+            flow_cta: 'Verify Transaction',
+            flow_action: 'navigate',
+            flow_action_payload: { screen: 'PIN_SCREEN' },
+            mode: 'draft',
+          },
+        },
+      },
+    });
   });
 });

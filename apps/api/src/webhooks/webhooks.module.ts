@@ -5,10 +5,11 @@ import { BankingModule } from '../banking/banking.module';
 import { PartnerModule } from '../partner/partner.module';
 import { SttModule } from '../stt/stt.module';
 import { WhatsappController } from './whatsapp.controller';
+import { WhatsappFlowController } from './whatsapp-flow.controller';
 import { FlutterwaveController } from './flutterwave.controller';
 
 @Module({
   imports: [ChannelModule, OnboardingModule, BankingModule, PartnerModule, SttModule],
-  controllers: [WhatsappController, FlutterwaveController],
+  controllers: [WhatsappController, WhatsappFlowController, FlutterwaveController],
 })
 export class WebhooksModule {}

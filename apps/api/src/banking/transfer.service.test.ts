@@ -8,6 +8,7 @@ import type { TransactionsRepository } from '../database/transactions.repository
 import type { AuditRepository } from '../database/audit.repository';
 import type { WalletService } from './wallet.service';
 import type { ReceiptService } from './receipt.service';
+import type { WhatsappFlowService } from '../channel/whatsapp-flow.service';
 
 const pins = new PinService(); // real crypto — the gate under test
 const PIN_HASH = pins.hash('1234');
@@ -53,7 +54,8 @@ function make(failCount = 1) {
   } as unknown as WalletService;
   const receipts = { render: vi.fn(() => Buffer.from('png')) } as unknown as ReceiptService;
 
-  const svc = new TransferService(channel, users, wallets, txns, audit, wallet, pins, receipts);
+  const flows = { isEnabled: () => false } as unknown as WhatsappFlowService;
+  const svc = new TransferService(channel, users, wallets, txns, audit, wallet, pins, receipts, flows);
   return { svc, channel, txns, wallet, users, audit };
 }
 

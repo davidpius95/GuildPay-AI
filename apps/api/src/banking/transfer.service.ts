@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Currency } from '@guildpay/shared';
 import { CHANNEL_ADAPTER } from '../channel/channel.module';
 import type { ChannelAdapter } from '../channel/channel-adapter';
+import { WhatsappFlowService } from '../channel/whatsapp-flow.service';
 import { UsersRepository, type UserRow } from '../database/users.repository';
 import { WalletsRepository, type WalletRow } from '../database/wallets.repository';
 import { TransactionsRepository, type TransactionRow } from '../database/transactions.repository';
@@ -31,6 +32,7 @@ export class TransferService {
     private readonly wallet: WalletService,
     private readonly pins: PinService,
     private readonly receipts: ReceiptService,
+    private readonly flows: WhatsappFlowService,
   ) {}
 
   /** Step 1 — validate, create a pending_confirmation transaction, show the card. */
@@ -76,9 +78,22 @@ export class TransferService {
     });
   }
 
-  /** Step 2 — user tapped Confirm: ask for the transaction PIN. */
+  /** Step 2 — user tapped Confirm: ask for the transaction PIN (via secure Flow when available). */
   async confirm(user: UserRow, txn: TransactionRow): Promise<void> {
     await this.txns.setStatus(txn.id, 'pending_otp'); // status name kept for schema compat; gate is the PIN
+    // Returning users with a PIN get the encrypted WhatsApp Flow modal so the PIN
+    // never lands in chat. First-time set / non-Meta channels fall back to chat.
+    if (user.pin_hash && this.channel.name === 'meta' && this.flows.isEnabled()) {
+      const cur = txn.currency as Currency;
+      await this.channel.send(
+        this.flows.buildPinFlowMessage(
+          user.wa_phone,
+          txn.id,
+          `🔐 Approve your transfer of *${formatMoney(cur, txn.amount)}* to ${txn.recipient_name}.\nTap *Verify Transaction* to enter your PIN securely.`,
+        ),
+      );
+      return;
+    }
     await this.send(
       user,
       user.pin_hash

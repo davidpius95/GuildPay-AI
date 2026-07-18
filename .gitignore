@@ -13,6 +13,14 @@ out/
 .env
 .env.*
 !.env.example
+
+# Private keys / certs — NEVER commit (WhatsApp Flow key, etc.)
+*.pem
+*.key
+
+# Large local media (competitor recordings, etc.)
+*.mp4
+*.mov
 !.env.production.example
 
 # Logs

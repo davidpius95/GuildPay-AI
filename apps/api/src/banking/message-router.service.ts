@@ -48,6 +48,26 @@ export class MessageRouter {
     await this.snapToPay.fromImage(user, wallet, image, mimeType);
   }
 
+  /**
+   * Submit a PIN that arrived out-of-band via an encrypted WhatsApp Flow, keyed
+   * by the pending transaction id (from the signed flow token) rather than the
+   * chat. Resolves the txn → wallet → user and dispatches to the same
+   * submitPin/pinGate money-gate the chat path uses. Returns whether a matching
+   * pending transaction was found; the actual outcome (success / wrong PIN /
+   * failure) is delivered to the user as chat messages by submitPin.
+   */
+  async submitPinForTxn(txnId: string, pin: string): Promise<'dispatched' | 'stale'> {
+    const txn = await this.txns.findById(txnId);
+    if (!txn || txn.status !== 'pending_otp') return 'stale';
+    const wallet = await this.wallets.findById(txn.wallet_id);
+    if (!wallet) return 'stale';
+    const user = await this.users.findById(wallet.user_id);
+    if (!user) return 'stale';
+    const svc = txn.type === 'bank_transfer' ? this.bankTransfer : this.transfer;
+    await svc.submitPin(user, wallet, pin);
+    return 'dispatched';
+  }
+
   async handle(msg: InboundMessage): Promise<void> {
     const user = await this.users.findByWaPhone(msg.waPhone);
     if (!user) return;

@@ -9,6 +9,7 @@ import type { AuditRepository } from '../database/audit.repository';
 import type { WalletService } from './wallet.service';
 import { InsufficientFundsError } from './wallet.service';
 import type { PartnerService } from '../partner/partner.service';
+import type { WhatsappFlowService } from '../channel/whatsapp-flow.service';
 
 const pins = new PinService(); // real crypto — the gate under test
 const PIN_HASH = pins.hash('1234');
@@ -76,7 +77,8 @@ function make(
   const partners = { forCurrency: vi.fn(() => adapter) } as unknown as PartnerService;
   const receipts = { render: vi.fn(() => Buffer.from('png')) } as unknown as import('./receipt.service').ReceiptService;
 
-  const svc = new BankTransferService(channel, users, txns, audit, wallet$, pins, partners, receipts);
+  const flows = { isEnabled: () => false } as unknown as WhatsappFlowService;
+  const svc = new BankTransferService(channel, users, txns, audit, wallet$, pins, partners, receipts, flows);
   return { svc, channel, txns, wallet: wallet$, users, audit, bankTransfer, adapter };
 }
 

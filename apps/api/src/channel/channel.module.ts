@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MetaCloudAdapter } from './meta-cloud.adapter';
 import { TwilioSandboxAdapter } from './twilio-sandbox.adapter';
+import { WhatsappFlowService } from './whatsapp-flow.service';
 
 export const CHANNEL_ADAPTER = Symbol('CHANNEL_ADAPTER');
 
@@ -13,6 +14,7 @@ export const CHANNEL_ADAPTER = Symbol('CHANNEL_ADAPTER');
   providers: [
     MetaCloudAdapter,
     TwilioSandboxAdapter,
+    WhatsappFlowService,
     {
       provide: CHANNEL_ADAPTER,
       inject: [ConfigService, MetaCloudAdapter, TwilioSandboxAdapter],
@@ -20,6 +22,6 @@ export const CHANNEL_ADAPTER = Symbol('CHANNEL_ADAPTER');
         config.get<string>('CHANNEL_ADAPTER') === 'twilio' ? twilio : meta,
     },
   ],
-  exports: [CHANNEL_ADAPTER, MetaCloudAdapter, TwilioSandboxAdapter],
+  exports: [CHANNEL_ADAPTER, MetaCloudAdapter, TwilioSandboxAdapter, WhatsappFlowService],
 })
 export class ChannelModule {}
