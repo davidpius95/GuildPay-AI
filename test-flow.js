@@ -1,4 +1,4 @@
-{
+const flow = {
   "version": "6.3",
   "data_api_version": "3.0",
   "routing_model": {
@@ -46,4 +46,5 @@
       }
     }
   ]
-}
+};
+console.log("Syntax is valid JSON:", JSON.stringify(flow) !== "");

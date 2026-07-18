@@ -102,7 +102,7 @@ export class ReceiptService {
   <!-- footer -->
   <rect x="40" y="${footerY - 6}" width="680" height="140" rx="28" fill="#0b141a"/>
   <text x="380" y="${footerY + 40}" text-anchor="middle" font-family="DejaVu Sans" font-weight="700" font-size="22" fill="#ffffff">Guild<tspan fill="${GREEN}">Pay</tspan> AI</text>
-  <text x="380" y="${footerY + 72}" text-anchor="middle" font-family="DejaVu Sans" font-size="18" fill="#8696a0">Your money, right inside WhatsApp.</text>
+  <text x="380" y="${footerY + 72}" text-anchor="middle" font-family="DejaVu Sans" font-size="18" fill="#8696a0">Everyday money, made conversational.</text>
   <text x="380" y="${footerY + 100}" text-anchor="middle" font-family="DejaVu Sans" font-size="15" fill="#5a6b74">Send money, buy airtime &amp; pay bills — just by chatting.</text>
 </svg>`;
   }

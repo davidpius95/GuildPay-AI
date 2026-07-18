@@ -164,7 +164,7 @@ export class BankTransferService {
     }
 
     // ── The payout attempt: the ONLY place a debit may be reversed. ───────────
-    let res: { status: 'completed' | 'pending' | 'failed'; raw?: unknown };
+    let res: { status: 'completed' | 'pending' | 'failed'; raw?: unknown; providerRef?: string };
     try {
       res = await this.partners.forCurrency('NGN').bankTransfer({
         transactionId: txn.id,
@@ -203,6 +203,11 @@ export class BankTransferService {
 
     // ── Payout ACCEPTED — money is in flight. From here NOTHING reverses; a
     //    later failure is handled only by the transfer.completed webhook. ──────
+    // Real Flutterwave identifiers to propagate onto the receipt (Xara parity).
+    const rawTransfer = res.raw as { id?: number | string; reference?: string } | undefined;
+    const providerId = rawTransfer?.id != null ? String(rawTransfer.id) : undefined;
+    const providerRef = rawTransfer?.reference ?? res.providerRef ?? undefined;
+
     const completed = res.status === 'completed';
     await this.txns.setStatus(txn.id, completed ? 'completed' : 'processing');
     await this.audit.record({
@@ -210,7 +215,7 @@ export class BankTransferService {
       action: 'bank_transfer_initiated',
       entity: 'transaction',
       entityId: txn.id,
-      metadata: { amount, bankCode: txn.bank_code },
+      metadata: { amount, bankCode: txn.bank_code, providerId },
     });
     try {
       const newBalance = await this.wallet.getBalance(wallet.id);
@@ -220,10 +225,10 @@ export class BankTransferService {
           `Amount: ${formatMoney(cur, amount)}\n` +
           `To: ${txn.recipient_name}\n` +
           `Account: ${txn.recipient_ref}\n` +
-          `Ref: ${txn.id.slice(0, 8).toUpperCase()}\n\n` +
+          `Ref: ${providerRef ?? txn.id.slice(0, 8).toUpperCase()}\n\n` +
           `Your new balance is *${formatMoney(cur, newBalance)}*.`,
       );
-      await this.sendReceipt(user, wallet, txn, amount, completed);
+      await this.sendReceipt(user, wallet, txn, amount, completed, providerRef, providerId);
       await this.channel.send({
         to: user.wa_phone,
         kind: 'interactive',
@@ -276,6 +281,8 @@ export class BankTransferService {
     txn: TransactionRow,
     amount: number,
     completed: boolean,
+    providerRef?: string,
+    providerId?: string,
   ): Promise<void> {
     try {
       let bankName: string | undefined;
@@ -296,6 +303,8 @@ export class BankTransferService {
         bank: bankName,
         account: txn.recipient_ref ?? undefined,
         reference: txn.id.slice(0, 8).toUpperCase(),
+        providerRef, // full Flutterwave reference — shown as "Reference" when present
+        providerId, // Flutterwave transaction id — shown as a separate "ID" row
       });
       await this.channel.send({
         to: user.wa_phone,

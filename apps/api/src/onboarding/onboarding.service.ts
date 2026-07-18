@@ -259,7 +259,7 @@ export class OnboardingService {
     await this.channel.send({
       to,
       kind: 'list',
-      body: '👋 Welcome to *GuildPay* — your money, right inside WhatsApp.\n\nChoose your language to get started:',
+      body: '👋 Welcome to *GuildPay* — everyday money, made conversational.\n\nChoose your language to get started:',
       buttonTitle: 'Choose language',
       sections: [
         {
