@@ -11,7 +11,14 @@ export interface ReceiptData {
   recipient: string;
   bank?: string;
   account?: string;
+  /** Fallback reference (internal) — shown only when providerRef is absent. */
   reference: string;
+  /** Full provider (Flutterwave) transaction reference, e.g. "TRF927769...". Preferred. */
+  providerRef?: string;
+  /** Provider (Flutterwave) numeric transaction id — rendered as a separate "ID" row. */
+  providerId?: string;
+  /** Optional fee/transparency line, e.g. "Fee covered by your 30 free transfers/month". */
+  feeNote?: string;
   date?: Date;
 }
 
@@ -49,14 +56,21 @@ export class ReceiptService {
     const rows: Array<[string, string]> = [['Sender', d.sender], ['Recipient', d.recipient]];
     if (d.bank) rows.push(['Recipient Bank', d.bank]);
     if (d.account) rows.push(['Recipient Account', d.account]);
-    rows.push(['Reference', d.reference]);
+    // Prefer the full provider (Flutterwave) reference; fall back to the internal one.
+    rows.push(['Reference', d.providerRef ?? d.reference]);
+    if (d.providerId) rows.push(['ID', d.providerId]);
 
     let y = 396;
     const rowSvg = rows
       .map(([label, value]) => {
+        // Long values (Flutterwave refs/ids ~24 chars) render full at a smaller
+        // size so they aren't truncated; short values keep the larger, clipped style.
+        const long = value.length > 20;
+        const size = long ? 15 : 20;
+        const shown = long ? value : clip(value, 26);
         const block =
           `<text x="72" y="${y}" font-family="DejaVu Sans" font-size="20" fill="${MUTED}">${esc(label)}</text>` +
-          `<text x="688" y="${y}" text-anchor="end" font-family="DejaVu Sans" font-weight="700" font-size="20" fill="${INK}">${esc(clip(value, 26))}</text>` +
+          `<text x="688" y="${y}" text-anchor="end" font-family="DejaVu Sans" font-weight="700" font-size="${size}" fill="${INK}">${esc(shown)}</text>` +
           `<line x1="72" y1="${y + 22}" x2="688" y2="${y + 22}" stroke="${LINE}" stroke-width="1.5" stroke-dasharray="2 5"/>`;
         y += 56;
         return block;
@@ -78,6 +92,7 @@ export class ReceiptService {
   <!-- amount -->
   <text x="380" y="248" text-anchor="middle" font-family="DejaVu Sans" font-weight="800" font-size="76" fill="${GREEN_DEEP}">${esc(amount)}</text>
   <text x="380" y="290" text-anchor="middle" font-family="DejaVu Sans" font-size="20" fill="${MUTED}">${esc(when)}</text>
+  ${d.feeNote ? `<text x="380" y="318" text-anchor="middle" font-family="DejaVu Sans" font-size="16" fill="${GREEN_DEEP}">${esc(clip(d.feeNote, 46))}</text>` : ''}
 
   <line x1="72" y1="340" x2="688" y2="340" stroke="${LINE}" stroke-width="2"/>
 
