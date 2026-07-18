@@ -38,7 +38,31 @@ export interface OutboundFlow {
   mode?: 'draft' | 'published'; // draft lets you test before publishing
 }
 
-export type OutboundMessage = OutboundText | OutboundInteractive | OutboundImage | OutboundFlow;
+/**
+ * A WhatsApp List message — a tappable menu that opens a sheet of grouped rows
+ * (up to 10 sections × 10 rows). Used where reply buttons (max 3) aren't enough,
+ * e.g. the main action menu. Row `id`s are delivered back as `interactiveReplyId`,
+ * exactly like button replies, so routing is shared.
+ */
+export interface OutboundList {
+  to: string;
+  kind: 'list';
+  body: string;
+  buttonTitle: string; // label on the button that opens the list, e.g. 'Menu'
+  sections: {
+    title: string;
+    rows: { id: string; title: string; description?: string }[];
+  }[];
+  header?: string;
+  footer?: string;
+}
+
+export type OutboundMessage =
+  | OutboundText
+  | OutboundInteractive
+  | OutboundImage
+  | OutboundFlow
+  | OutboundList;
 
 /**
  * ChannelAdapter — abstracts the WhatsApp transport so the app is agnostic to

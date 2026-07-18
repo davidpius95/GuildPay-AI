@@ -83,10 +83,10 @@ describe('OnboardingService', () => {
   it('walks a new user through to an active wallet', async () => {
     const h = harness();
 
-    // first contact → user created + language prompt
+    // first contact → user created + language prompt (List message)
     expect(await h.svc.handle(msg({ text: 'hi' }))).toBe(true);
     expect(h.users.create).toHaveBeenCalledOnce();
-    expect(last(h.sent).kind).toBe('interactive');
+    expect(last(h.sent).kind).toBe('list');
 
     // language
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'lang_en' }));

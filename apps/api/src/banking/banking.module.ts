@@ -11,6 +11,7 @@ import { BankTransferService } from './bank-transfer.service';
 import { SnapToPayService } from './snap-to-pay.service';
 import { ReceiptService } from './receipt.service';
 import { KycService } from './kyc.service';
+import { TransactionHistoryService } from './transaction-history.service';
 import { MessageRouter } from './message-router.service';
 
 /**
@@ -30,6 +31,7 @@ import { MessageRouter } from './message-router.service';
     SnapToPayService,
     ReceiptService,
     KycService,
+    TransactionHistoryService,
     MessageRouter,
   ],
   exports: [MessageRouter, WalletService, OtpService],

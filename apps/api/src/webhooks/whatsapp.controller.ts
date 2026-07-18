@@ -75,11 +75,16 @@ export class WhatsappController {
         if (!handled) {
           // Onboarded user — if it's an audio note, transcribe it first
           if (msg.type === 'audio' && msg.mediaId) {
+            // Acknowledge immediately so the user knows we heard the voice note
+            // (transcription can take a couple of seconds).
+            await this.meta
+              .send({ to: msg.waPhone, kind: 'text', body: '🎤 Got your voice note — one moment…' })
+              .catch((err) => this.logger.warn(`voice ack failed: ${(err as Error).message}`));
             try {
               const { buffer, mimeType } = await this.meta.downloadMedia(msg.mediaId);
               const transcript = await this.stt.transcribe(buffer, mimeType);
               this.logger.log(`Transcribed voice note to: "${transcript}"`);
-              
+
               // Mutate the message into a text message for the router
               msg.type = 'text';
               msg.text = transcript;
@@ -88,7 +93,7 @@ export class WhatsappController {
               await this.meta.send({
                 to: msg.waPhone,
                 kind: 'text',
-                body: 'Sorry, I had trouble hearing that voice note. Could you type it instead? 🎤',
+                body: "I couldn't quite hear that. Please type your request, or send the voice note again. 🎤",
               });
               return; // Halt processing for this message
             }

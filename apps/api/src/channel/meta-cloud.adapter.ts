@@ -6,6 +6,7 @@ import type {
   ChannelAdapter,
   OutboundFlow,
   OutboundInteractive,
+  OutboundList,
   OutboundMessage,
   OutboundText,
 } from './channel-adapter';
@@ -205,8 +206,33 @@ export class MetaCloudAdapter implements ChannelAdapter {
     };
   }
 
-  private buildBody(message: OutboundText | OutboundInteractive | OutboundFlow): Record<string, unknown> {
+  private buildBody(
+    message: OutboundText | OutboundInteractive | OutboundFlow | OutboundList,
+  ): Record<string, unknown> {
     const base = { messaging_product: 'whatsapp', recipient_type: 'individual', to: message.to };
+    if (message.kind === 'list') {
+      return {
+        ...base,
+        type: 'interactive',
+        interactive: {
+          type: 'list',
+          ...(message.header ? { header: { type: 'text', text: message.header } } : {}),
+          body: { text: message.body },
+          ...(message.footer ? { footer: { text: message.footer } } : {}),
+          action: {
+            button: message.buttonTitle,
+            sections: message.sections.map((s) => ({
+              title: s.title,
+              rows: s.rows.map((r) => ({
+                id: r.id,
+                title: r.title,
+                ...(r.description ? { description: r.description } : {}),
+              })),
+            })),
+          },
+        },
+      };
+    }
     if (message.kind === 'flow') {
       return {
         ...base,

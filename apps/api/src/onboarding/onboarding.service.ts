@@ -256,15 +256,22 @@ export class OnboardingService {
   // ── prompts / send helpers ──────────────────────────────────────────────────
 
   private async promptLanguage(to: string): Promise<void> {
-    await this.buttons(
+    await this.channel.send({
       to,
-      '👋 Welcome to *GuildPay* — your money, right inside WhatsApp.\n\nWhich language would you like to use?',
-      [
-        { id: 'lang_en', title: 'English' },
-        { id: 'lang_pidgin', title: 'Pidgin' },
-        { id: 'lang_ar', title: 'العربية' },
+      kind: 'list',
+      body: '👋 Welcome to *GuildPay* — your money, right inside WhatsApp.\n\nChoose your language to get started:',
+      buttonTitle: 'Choose language',
+      sections: [
+        {
+          title: 'Select language',
+          rows: [
+            { id: 'lang_en', title: 'English', description: 'Continue in English' },
+            { id: 'lang_pidgin', title: 'Pidgin', description: 'Continue in Nigerian Pidgin' },
+            { id: 'lang_ar', title: 'العربية', description: 'المتابعة بالعربية' },
+          ],
+        },
       ],
-    );
+    });
   }
 
   private async promptMarket(to: string, name: string): Promise<void> {

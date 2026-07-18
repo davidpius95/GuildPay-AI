@@ -14,6 +14,7 @@ import { TransferService } from './transfer.service';
 import { BankTransferService } from './bank-transfer.service';
 import { SnapToPayService } from './snap-to-pay.service';
 import { KycService } from './kyc.service';
+import { TransactionHistoryService } from './transaction-history.service';
 import { formatMoney } from './money';
 
 /**
@@ -37,6 +38,7 @@ export class MessageRouter {
     private readonly bankTransfer: BankTransferService,
     private readonly snapToPay: SnapToPayService,
     private readonly kyc: KycService,
+    private readonly history: TransactionHistoryService,
   ) {}
 
   /** Snap-to-pay: an onboarded user sent a photo. Vision prefills a bank transfer. */
@@ -102,6 +104,7 @@ export class MessageRouter {
 
     // ── global shortcuts ────────────────────────────────────────────────────
     if (lower === 'balance') return this.sendBalance(user, wallet);
+    if (lower === 'history' || lower === 'transactions') return this.history.send(user, wallet);
 
     if (!text) {
       return this.send(user, "I can help with text for now — try *balance* or *send 2000 to 0803...*.");
@@ -152,6 +155,8 @@ export class MessageRouter {
               : 'Which bank is that account with?',
         );
       }
+      case 'history':
+        return this.history.send(user, wallet);
       case 'verify_identity':
         return this.handleVerifyIdentity(user, wallet, intent.idType, intent.idNumber);
       default:
@@ -167,16 +172,28 @@ export class MessageRouter {
     const balance = await this.wallet.getBalance(wallet.id);
     await this.channel.send({
       to: user.wa_phone,
-      kind: 'interactive',
+      kind: 'list',
       body:
         `💼 Your balance is *${formatMoney(wallet.currency as Currency, balance)}*.\n` +
         (wallet.virtual_account_number
-          ? `Account: ${wallet.virtual_account_number} (${wallet.virtual_bank_name})\n\n`
-          : `Wallet: ${wallet.reference}\n\n`) +
-        `What would you like to do?`,
-      buttons: [
-        { id: 'act_fund', title: 'Fund wallet' },
-        { id: 'act_send', title: 'Send money' },
+          ? `Account: ${wallet.virtual_account_number} (${wallet.virtual_bank_name})`
+          : `Wallet: ${wallet.reference}`),
+      buttonTitle: 'Menu',
+      sections: [
+        {
+          title: 'Money',
+          rows: [
+            { id: 'act_fund', title: 'Fund wallet', description: 'Add money to your wallet' },
+            { id: 'act_send', title: 'Send money', description: 'To a GuildPay user or any bank' },
+            { id: 'act_balance', title: 'Check balance', description: 'Refresh your balance' },
+          ],
+        },
+        {
+          title: 'Account',
+          rows: [
+            { id: 'act_history', title: 'Transaction history', description: 'See your recent activity' },
+          ],
+        },
       ],
     });
   }
@@ -186,6 +203,8 @@ export class MessageRouter {
     switch (id) {
       case 'act_balance':
         return this.sendBalance(user, wallet);
+      case 'act_history':
+        return this.history.send(user, wallet);
       case 'act_fund':
         return this.handleFundIntent(user, wallet);
       case 'act_send':

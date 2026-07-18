@@ -142,4 +142,51 @@ describe('MetaCloudAdapter.send flow', () => {
       },
     });
   });
+
+  it('sends an interactive list body', async () => {
+    const a = makeAdapter({ META_WHATSAPP_TOKEN: 'tok', META_PHONE_NUMBER_ID: 'pn1' });
+    const fetchMock = vi.fn(
+      async (_url: string, _init: RequestInit) => ({ ok: true, text: async () => '' }) as unknown as Response,
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await a.send({
+      to: '234800',
+      kind: 'list',
+      body: 'Your balance is ₦100.',
+      buttonTitle: 'Menu',
+      sections: [
+        {
+          title: 'Money',
+          rows: [
+            { id: 'act_fund', title: 'Fund wallet', description: 'Add money' },
+            { id: 'act_send', title: 'Send money' },
+          ],
+        },
+      ],
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(body).toMatchObject({
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: 'Your balance is ₦100.' },
+        action: {
+          button: 'Menu',
+          sections: [
+            {
+              title: 'Money',
+              rows: [
+                { id: 'act_fund', title: 'Fund wallet', description: 'Add money' },
+                { id: 'act_send', title: 'Send money' },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    // description omitted when absent
+    expect(body.interactive.action.sections[0].rows[1]).not.toHaveProperty('description');
+  });
 });
