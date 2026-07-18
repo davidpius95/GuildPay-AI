@@ -131,6 +131,8 @@ export class TransferService {
         recipient.id,
         amount,
         txn.id,
+        'GuildPay P2P Transfer',
+        txn.id
       );
       await this.txns.setStatus(txn.id, 'completed');
       await this.audit.record({

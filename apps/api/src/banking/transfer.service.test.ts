@@ -102,7 +102,7 @@ describe('TransferService — no-pin-no-money gate', () => {
   it('only the CORRECT PIN moves money and completes the transaction', async () => {
     await h.svc.submitPin(user, sender, '1234');
     expect(h.wallet.transfer).toHaveBeenCalledOnce();
-    expect(h.wallet.transfer).toHaveBeenCalledWith('w1', 'w2', 2000, 'txn1');
+    expect(h.wallet.transfer).toHaveBeenCalledWith('w1', 'w2', 2000, 'txn1', 'GuildPay P2P Transfer', 'txn1');
     expect(h.txns.setStatus).toHaveBeenCalledWith('txn1', 'completed');
   });
 });

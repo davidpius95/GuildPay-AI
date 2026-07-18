@@ -31,23 +31,29 @@ export class WalletService {
    * locks the row and enforces sufficient funds. No counterparty wallet — money leaves
    * the system, so a single debit ledger entry is written. Reverse with credit() on failure.
    */
-  async debit(walletId: string, amount: number, transactionId: string): Promise<string> {
+  async debit(
+    walletId: string, 
+    amount: number, 
+    transactionId: string,
+    description: string,
+    reference?: string
+  ): Promise<string> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      const { rows, rowCount } = await client.query<{ balance: string }>(
-        'update public.wallets set balance = balance - $1 where id = $2 and balance >= $1 returning balance',
+      const { rows, rowCount } = await client.query<{ balance: string; currency: string }>(
+        'update public.wallets set balance = balance - $1 where id = $2 and balance >= $1 returning balance, currency',
         [amount, walletId],
       );
       if (rowCount === 0) {
         await client.query('rollback');
         throw new InsufficientFundsError();
       }
-      const balanceAfter = rows[0]!.balance;
+      const { balance: balanceAfter, currency } = rows[0]!;
       await client.query(
-        `insert into public.ledger_entries (transaction_id, wallet_id, direction, amount, balance_after)
-         values ($1, $2, 'debit', $3, $4)`,
-        [transactionId, walletId, amount, balanceAfter],
+        `insert into public.ledger_entries (transaction_id, wallet_id, direction, amount, currency, balance_after, description, reference)
+         values ($1, $2, 'debit', $3, $4, $5, $6, $7)`,
+        [transactionId, walletId, amount, currency, balanceAfter, description, reference ?? null],
       );
       await client.query('commit');
       return balanceAfter;
@@ -62,19 +68,25 @@ export class WalletService {
   }
 
   /** Credit a wallet (e.g. demo funding). Atomic: balance + ledger entry. */
-  async credit(walletId: string, amount: number, transactionId: string): Promise<string> {
+  async credit(
+    walletId: string, 
+    amount: number, 
+    transactionId: string,
+    description: string,
+    reference?: string
+  ): Promise<string> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      const { rows } = await client.query<{ balance: string }>(
-        'update public.wallets set balance = balance + $1 where id = $2 returning balance',
+      const { rows } = await client.query<{ balance: string; currency: string }>(
+        'update public.wallets set balance = balance + $1 where id = $2 returning balance, currency',
         [amount, walletId],
       );
-      const balanceAfter = rows[0]!.balance;
+      const { balance: balanceAfter, currency } = rows[0]!;
       await client.query(
-        `insert into public.ledger_entries (transaction_id, wallet_id, direction, amount, balance_after)
-         values ($1, $2, 'credit', $3, $4)`,
-        [transactionId, walletId, amount, balanceAfter],
+        `insert into public.ledger_entries (transaction_id, wallet_id, direction, amount, currency, balance_after, description, reference)
+         values ($1, $2, 'credit', $3, $4, $5, $6, $7)`,
+        [transactionId, walletId, amount, currency, balanceAfter, description, reference ?? null],
       );
       await client.query('commit');
       return balanceAfter;
@@ -95,36 +107,38 @@ export class WalletService {
     toWalletId: string,
     amount: number,
     transactionId: string,
+    description: string,
+    reference?: string
   ): Promise<{ fromBalance: string; toBalance: string }> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
 
-      const debit = await client.query<{ balance: string }>(
+      const debit = await client.query<{ balance: string; currency: string }>(
         `update public.wallets set balance = balance - $1
-         where id = $2 and balance >= $1 returning balance`,
+         where id = $2 and balance >= $1 returning balance, currency`,
         [amount, fromWalletId],
       );
       if (debit.rowCount === 0) {
         await client.query('rollback');
         throw new InsufficientFundsError();
       }
-      const fromBalance = debit.rows[0]!.balance;
+      const { balance: fromBalance, currency: fromCurrency } = debit.rows[0]!;
       await client.query(
-        `insert into public.ledger_entries (transaction_id, wallet_id, direction, amount, balance_after)
-         values ($1, $2, 'debit', $3, $4)`,
-        [transactionId, fromWalletId, amount, fromBalance],
+        `insert into public.ledger_entries (transaction_id, wallet_id, direction, amount, currency, balance_after, description, reference)
+         values ($1, $2, 'debit', $3, $4, $5, $6, $7)`,
+        [transactionId, fromWalletId, amount, fromCurrency, fromBalance, description, reference ?? null],
       );
 
-      const credit = await client.query<{ balance: string }>(
-        'update public.wallets set balance = balance + $1 where id = $2 returning balance',
+      const credit = await client.query<{ balance: string; currency: string }>(
+        'update public.wallets set balance = balance + $1 where id = $2 returning balance, currency',
         [amount, toWalletId],
       );
-      const toBalance = credit.rows[0]!.balance;
+      const { balance: toBalance, currency: toCurrency } = credit.rows[0]!;
       await client.query(
-        `insert into public.ledger_entries (transaction_id, wallet_id, direction, amount, balance_after)
-         values ($1, $2, 'credit', $3, $4)`,
-        [transactionId, toWalletId, amount, toBalance],
+        `insert into public.ledger_entries (transaction_id, wallet_id, direction, amount, currency, balance_after, description, reference)
+         values ($1, $2, 'credit', $3, $4, $5, $6, $7)`,
+        [transactionId, toWalletId, amount, toCurrency, toBalance, description, reference ?? null],
       );
 
       await client.query('commit');

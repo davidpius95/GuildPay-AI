@@ -151,7 +151,7 @@ export class BankTransferService {
 
     // Debit first (holds the funds); reverse on payout failure.
     try {
-      await this.wallet.debit(wallet.id, amount, txn.id);
+      await this.wallet.debit(wallet.id, amount, txn.id, 'NIP Transfer Hold', txn.id);
     } catch (err) {
       await this.txns.setStatus(txn.id, 'failed');
       await this.send(
@@ -181,7 +181,7 @@ export class BankTransferService {
       }
     } catch (err) {
       // Payout was NOT accepted → reverse the debit; no money left the wallet.
-      await this.wallet.credit(wallet.id, amount, txn.id);
+      await this.wallet.credit(wallet.id, amount, txn.id, 'NIP Transfer Refund', txn.id);
       await this.txns.setStatus(txn.id, 'failed');
       const message = (err as Error).message;
       this.logger.error(`bank transfer ${txn.id} payout failed: ${message}`);

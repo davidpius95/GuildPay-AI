@@ -148,7 +148,7 @@ describe('BankTransferService — no-pin-no-money gate', () => {
 
   it('the CORRECT PIN debits then pays out and completes', async () => {
     await h.svc.submitPin(user, wallet, '1234');
-    expect(h.wallet.debit).toHaveBeenCalledWith('w1', 2000, 'txn1');
+    expect(h.wallet.debit).toHaveBeenCalledWith('w1', 2000, 'txn1', 'NIP Transfer Hold', 'txn1');
     expect(h.bankTransfer).toHaveBeenCalledOnce();
     expect(h.txns.setStatus).toHaveBeenCalledWith('txn1', 'completed');
   });
@@ -157,7 +157,7 @@ describe('BankTransferService — no-pin-no-money gate', () => {
     const f = make({ transferStatus: 'failed' });
     await f.svc.submitPin(user, wallet, '1234');
     expect(f.wallet.debit).toHaveBeenCalledOnce();
-    expect(f.wallet.credit).toHaveBeenCalledWith('w1', 2000, 'txn1'); // refunded
+    expect(f.wallet.credit).toHaveBeenCalledWith('w1', 2000, 'txn1', 'NIP Transfer Refund', 'txn1'); // refunded
     expect(f.txns.setStatus).toHaveBeenCalledWith('txn1', 'failed');
   });
 

@@ -147,7 +147,13 @@ export class FlutterwaveController {
       providerRef: flwRef,
       status: 'completed',
     });
-    const balance = await this.wallet.credit(wallet.id, amount, txn.id);
+    const balance = await this.wallet.credit(
+      wallet.id,
+      amount,
+      txn.id,
+      'Wallet Funding via Flutterwave',
+      flwRef
+    );
     await this.audit.record({
       userId: wallet.user_id,
       action: 'wallet_funded',
@@ -186,7 +192,8 @@ export class FlutterwaveController {
     if (txn.status === 'failed') return; // already reversed
 
     const amount = Number(txn.amount);
-    await this.wallet.credit(txn.wallet_id, amount, txn.id); // refund the earlier debit
+    const flwRef = data.id ? String(data.id) : ref;
+    await this.wallet.credit(txn.wallet_id, amount, txn.id, 'Transfer Refund from Flutterwave', flwRef); // refund the earlier debit
     await this.txns.setStatus(txn.id, 'failed');
     await this.audit.record({
       action: 'bank_transfer_reversed',

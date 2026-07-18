@@ -58,7 +58,7 @@ describe('FlutterwaveController — funding', () => {
     const h = harness();
     await h.controller['process'](charge);
     expect(h.verifyTransaction).toHaveBeenCalledWith(99);
-    expect(h.credit).toHaveBeenCalledWith('w1', 5000, 'txn1');
+    expect(h.credit).toHaveBeenCalledWith('w1', 5000, 'txn1', 'Wallet Funding via Flutterwave', 'FLW-REF-1');
     expect(h.send).toHaveBeenCalledOnce(); // user notified
   });
 

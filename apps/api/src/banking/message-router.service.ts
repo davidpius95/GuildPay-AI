@@ -287,7 +287,7 @@ export class MessageRouter {
       amount,
       status: 'completed',
     });
-    const balance = await this.wallet.credit(wallet.id, amount, txn.id);
+    const balance = await this.wallet.credit(wallet.id, amount, txn.id, 'Demo Funding', txn.id);
     await this.audit.record({
       userId: user.id,
       action: 'wallet_funded',
