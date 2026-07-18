@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ConfigService } from '@nestjs/config';
 import { SttService } from './stt.service';
+import type { SttProvider } from './stt-provider';
+
+/** Access the private `providers` array without triggering no-explicit-any. */
+function getProviders(service: SttService): SttProvider[] {
+  return (service as unknown as Record<string, unknown>).providers as SttProvider[];
+}
 
 describe('SttService', () => {
   let configService: ConfigService;
@@ -17,7 +23,7 @@ describe('SttService', () => {
 
   it('tries the first provider and succeeds', async () => {
     const service = new SttService(configService);
-    const providers = (service as any).providers;
+    const providers = getProviders(service);
     
     const groqSpy = vi.spyOn(providers[0], 'transcribe').mockResolvedValue('Hello Groq');
     const deepgramSpy = vi.spyOn(providers[1], 'transcribe').mockResolvedValue('Hello Deepgram');
@@ -31,7 +37,7 @@ describe('SttService', () => {
 
   it('falls back to second provider if first fails', async () => {
     const service = new SttService(configService);
-    const providers = (service as any).providers;
+    const providers = getProviders(service);
     
     const groqSpy = vi.spyOn(providers[0], 'transcribe').mockRejectedValue(new Error('Groq dead'));
     const deepgramSpy = vi.spyOn(providers[1], 'transcribe').mockResolvedValue('Hello Deepgram');
@@ -45,7 +51,7 @@ describe('SttService', () => {
 
   it('throws if all fail', async () => {
     const service = new SttService(configService);
-    const providers = (service as any).providers;
+    const providers = getProviders(service);
     
     vi.spyOn(providers[0], 'transcribe').mockRejectedValue(new Error('Groq dead'));
     vi.spyOn(providers[1], 'transcribe').mockRejectedValue(new Error('Deepgram dead'));
