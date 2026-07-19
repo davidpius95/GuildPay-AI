@@ -44,9 +44,28 @@ function harness() {
     }),
   } as unknown as UsersRepository;
 
+  let wallet: Record<string, unknown> | null = null;
   const wallets = {
-    create: vi.fn(async (p: { reference: string }) => ({ id: 'w1', reference: p.reference })),
-    setVirtualAccount: vi.fn(async () => undefined),
+    create: vi.fn(async (p: { reference: string; currency: string; market: string }) => {
+      wallet = {
+        id: 'w1',
+        reference: p.reference,
+        currency: p.currency,
+        market: p.market,
+        virtual_account_number: null,
+        virtual_bank_name: null,
+        virtual_account_ref: null,
+      };
+      return wallet;
+    }),
+    setVirtualAccount: vi.fn(async (_id: string, acct: string, bank: string, ref?: string) => {
+      if (wallet) {
+        wallet.virtual_account_number = acct;
+        wallet.virtual_bank_name = bank;
+        wallet.virtual_account_ref = ref ?? null;
+      }
+    }),
+    findByUserId: vi.fn(async () => (wallet ? [wallet] : [])),
   } as unknown as WalletsRepository;
 
   const audit = { record: vi.fn(async () => undefined) } as unknown as AuditRepository;
@@ -126,6 +145,32 @@ describe('OnboardingService', () => {
     expect(lastBody(h.sent)).toContain('GPA-NG-');
     expect(lastBody(h.sent)).toContain('9900001111'); // funding account shown
     expect(lastBody(h.sent)).toContain('Wema Bank');
+  });
+
+  it('blocks an invalid BVN — no wallet, no account, stays on the KYC step', async () => {
+    const h = harness();
+    await h.svc.handle(msg({ text: 'hi' }));
+    await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'lang_en' }));
+    await h.svc.handle(msg({ text: 'Ada Lovelace' }));
+    await h.svc.handle(msg({ text: 'ada@example.com' }));
+    await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'market_ng' }));
+
+    // Flutterwave rejects the BVN at NUBAN creation → verification fails.
+    h.createVirtualAccount.mockRejectedValueOnce(new Error('BVN mismatch'));
+    await h.svc.handle(msg({ text: '99999999999' }));
+
+    expect(lastBody(h.sent)).toContain("couldn't verify");
+    expect(h.wallets.create).not.toHaveBeenCalled(); // no wallet on failure
+    // KYC status recorded as failed, user NOT advanced past the kyc step.
+    const failedUpdate = (h.users.update as ReturnType<typeof vi.fn>).mock.calls.some(
+      ([, patch]) => (patch as Record<string, unknown>).kyc_status === 'failed',
+    );
+    expect(failedUpdate).toBe(true);
+
+    // Re-entering a valid BVN now succeeds and advances to the PIN step.
+    await h.svc.handle(msg({ text: '12345678901' }));
+    expect(lastBody(h.sent)).toContain('PIN');
+    expect(h.wallets.create).toHaveBeenCalledOnce();
   });
 
   it('QAR onboarding provisions a simulated account and shows it', async () => {

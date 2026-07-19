@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getDisputes } from '../../lib/api';
 import { money, titleize } from '../../lib/format';
 
@@ -52,7 +53,9 @@ export default async function Disputes() {
                 )}
                 {rows.map((d) => (
                   <tr key={d.id}>
-                    <td className="mono n">{d.id}</td>
+                    <td className="mono n">
+                      <Link href={`/disputes/${d.id}`}>{d.id}</Link>
+                    </td>
                     <td><span className={`badge ${badgeClass(d.status)}`}>{titleize(d.status)}</span></td>
                     <td className="mono">{money(d.currency, d.amount)}</td>
                     <td>{d.reason ?? '—'}</td>

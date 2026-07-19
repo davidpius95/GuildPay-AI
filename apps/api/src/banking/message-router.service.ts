@@ -15,6 +15,9 @@ import { BankTransferService } from './bank-transfer.service';
 import { SnapToPayService } from './snap-to-pay.service';
 import { KycService } from './kyc.service';
 import { TransactionHistoryService } from './transaction-history.service';
+import { ConversationService } from './conversation.service';
+import { PendingIntentService, type PendingIntent } from './pending-intent.service';
+import { IntentResultSchema, type IntentResult } from './orchestrator.service';
 import { formatMoney } from './money';
 
 /**
@@ -39,6 +42,8 @@ export class MessageRouter {
     private readonly snapToPay: SnapToPayService,
     private readonly kyc: KycService,
     private readonly history: TransactionHistoryService,
+    private readonly conversation: ConversationService,
+    private readonly pendingIntent: PendingIntentService,
   ) {}
 
   /** Snap-to-pay: an onboarded user sent a photo. Vision prefills a bank transfer. */
@@ -79,6 +84,9 @@ export class MessageRouter {
     const text = (msg.text ?? '').trim();
     const lower = text.toLowerCase();
 
+    // Remember what the user said so later turns have conversational context.
+    if (text) await this.conversation.record(user.id, 'user', text);
+
     // ── deterministic: awaiting the transaction PIN ─────────────────────────
     const pendingOtp = await this.txns.findLatestByStatus(wallet.id, ['pending_otp']);
     if (pendingOtp) {
@@ -110,21 +118,58 @@ export class MessageRouter {
       return this.send(user, "I can help with text for now — try *balance* or *send 2000 to 0803...*.");
     }
 
+    // ── a half-finished transaction from a prior turn ───────────────────────
+    // "send 5000" → "who to?" → "0803...": complete it deterministically rather
+    // than re-parsing the bare reply from scratch (the LLM would lose the amount).
+    const pending = await this.pendingIntent.get(user.id);
+    if (pending && lower === 'cancel') {
+      await this.pendingIntent.clear(user.id);
+      return this.send(user, 'No problem — cancelled. What would you like to do? 💬');
+    }
+
     // ── orchestrate free text ───────────────────────────────────────────────
-    const intent = await this.orchestrator.parse(text);
+    const history = await this.conversation.history(user.id);
+    const filled = pending ? this.fillSlot(pending, text) : null;
+    const intent = filled ?? (await this.orchestrator.parse(text, history));
+    return this.routeIntent(user, wallet, intent, text);
+  }
+
+  /**
+   * Route a parsed intent to its capability. Transaction intents that are still
+   * missing a detail are saved as a pending intent (so the next turn can finish
+   * them) instead of being forgotten; once a flow actually starts, or the user
+   * switches to a non-transfer action, the pending intent is cleared.
+   */
+  private async routeIntent(
+    user: UserRow,
+    wallet: WalletRow,
+    intent: IntentResult,
+    text: string,
+  ): Promise<void> {
     switch (intent.intent) {
       case 'balance':
+        await this.pendingIntent.clear(user.id);
         return this.sendBalance(user, wallet);
       case 'fund':
+        await this.pendingIntent.clear(user.id);
         return this.handleFundIntent(user, wallet, intent.amount);
       case 'p2p_transfer': {
         // The LLM sometimes labels a bank payout as P2P. A 10-digit ref is a NUBAN
         // (NG phones are 11 digits) — with a bank name present it's a bank transfer.
         const ref = intent.recipientRef?.replace(/\D/g, '') ?? '';
         if (intent.amount && /^\d{10}$/.test(ref) && intent.bankName) {
+          await this.pendingIntent.clear(user.id);
           return this.bankTransfer.start(user, wallet, intent.amount, ref, intent.bankName);
         }
         if (intent.amount && /^\d{10}$/.test(ref)) {
+          // Have amount + NUBAN, still need the bank — keep it as a bank_transfer.
+          await this.pendingIntent.set(user.id, {
+            intent: 'bank_transfer',
+            amount: intent.amount,
+            recipientRef: null,
+            accountNumber: ref,
+            bankName: null,
+          });
           return this.send(
             user,
             `That looks like a *bank account number*. Which bank is ${ref} with?\n` +
@@ -132,8 +177,10 @@ export class MessageRouter {
           );
         }
         if (intent.amount && intent.recipientRef) {
+          await this.pendingIntent.clear(user.id);
           return this.transfer.start(user, wallet, intent.amount, intent.recipientRef);
         }
+        await this.pendingIntent.set(user.id, this.toPending(intent, 'p2p_transfer'));
         return this.send(
           user,
           !intent.amount
@@ -144,8 +191,16 @@ export class MessageRouter {
       case 'bank_transfer': {
         const account = intent.accountNumber ?? intent.recipientRef?.replace(/\D/g, '') ?? null;
         if (intent.amount && account && /^\d{10}$/.test(account) && intent.bankName) {
+          await this.pendingIntent.clear(user.id);
           return this.bankTransfer.start(user, wallet, intent.amount, account, intent.bankName);
         }
+        await this.pendingIntent.set(user.id, {
+          intent: 'bank_transfer',
+          amount: intent.amount,
+          recipientRef: null,
+          accountNumber: account && /^\d{10}$/.test(account) ? account : null,
+          bankName: intent.bankName,
+        });
         return this.send(
           user,
           !intent.amount
@@ -156,28 +211,115 @@ export class MessageRouter {
         );
       }
       case 'history':
+        await this.pendingIntent.clear(user.id);
         return this.history.send(user, wallet);
       case 'verify_identity':
+        await this.pendingIntent.clear(user.id);
         return this.handleVerifyIdentity(user, wallet, intent.idType, intent.idNumber);
       default:
+        // Free chat — hand to the AI with recent turns so it follows the thread.
         try {
-          return this.send(user, await this.ai.chat(text));
+          const history = await this.conversation.history(user.id);
+          return this.send(user, await this.ai.chat(text, history));
         } catch {
           return this.send(user, "I'm here to help with your money — try *balance* or *send 2000 to 0803...*.");
         }
     }
   }
 
+  /** Build a pending intent from a partially-parsed transaction intent. */
+  private toPending(intent: IntentResult, kind: PendingIntent['intent']): PendingIntent {
+    return {
+      intent: kind,
+      amount: intent.amount ?? null,
+      recipientRef: intent.recipientRef ?? null,
+      accountNumber: intent.accountNumber ?? null,
+      bankName: intent.bankName ?? null,
+    };
+  }
+
+  /**
+   * Deterministically merge a bare reply into the missing slot of a pending
+   * transaction. Returns the completed/updated intent, or null if the message
+   * isn't a plausible slot value (then the caller re-parses with the LLM).
+   * This never moves money — the resulting intent still runs the full confirm +
+   * name-enquiry + PIN gate.
+   */
+  private fillSlot(p: PendingIntent, text: string): IntentResult | null {
+    const raw = text.trim();
+    const digits = raw.replace(/\D+/g, '');
+    const isPhone = /^0\d{10}$/.test(digits) || /^234\d{10}$/.test(digits);
+    const isNuban = digits.length === 10;
+    const hasLetters = /[a-z]/i.test(raw);
+
+    const next = { ...p };
+    let filled = false;
+
+    // A bare, small number is an amount — never a 10/11/13-digit phone/account.
+    if (next.amount == null && digits.length > 0 && digits.length < 10) {
+      const amt = this.parseAmount(raw);
+      if (amt != null) {
+        next.amount = amt;
+        filled = true;
+      }
+    }
+
+    if (p.intent === 'bank_transfer') {
+      if (next.accountNumber == null && isNuban) {
+        next.accountNumber = digits;
+        filled = true;
+      }
+      if (next.bankName == null && hasLetters && !isNuban) {
+        const bank = this.parseBankName(raw);
+        if (bank) {
+          next.bankName = bank;
+          filled = true;
+        }
+      }
+    } else {
+      // p2p_transfer — fill the recipient from a phone, NUBAN, or GuildPay ref.
+      if (next.recipientRef == null) {
+        if (isPhone || isNuban) {
+          next.recipientRef = digits;
+          filled = true;
+        } else if (/^[a-z0-9._-]{3,}$/i.test(raw)) {
+          next.recipientRef = raw;
+          filled = true;
+        }
+      }
+    }
+
+    if (!filled) return null;
+    return IntentResultSchema.parse({ ...next });
+  }
+
+  /** Parse a bare money amount like "5000", "5,000", "5k", "₦2.5m". */
+  private parseAmount(text: string): number | null {
+    const m = text.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*(k|m)?/i);
+    if (!m?.[1]) return null;
+    let n = parseFloat(m[1]);
+    const suffix = m[2]?.toLowerCase();
+    if (suffix === 'k') n *= 1_000;
+    if (suffix === 'm') n *= 1_000_000;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  /** Pull a bank name out of a short reply ("it's GTBank" → "GTBank"). */
+  private parseBankName(text: string): string | null {
+    const t = text.replace(/^(it'?s|its|the bank is|bank\s*[:-]?)\s+/i, '').trim();
+    return t.length >= 2 ? t : null;
+  }
+
   private async sendBalance(user: UserRow, wallet: WalletRow): Promise<void> {
     const balance = await this.wallet.getBalance(wallet.id);
+    const summary = `💼 Your balance is *${formatMoney(wallet.currency as Currency, balance)}*.\n` +
+      (wallet.virtual_account_number
+        ? `Account: ${wallet.virtual_account_number} (${wallet.virtual_bank_name})`
+        : `Wallet: ${wallet.reference}`);
     await this.channel.send({
       to: user.wa_phone,
       kind: 'list',
-      body:
-        `💼 Your balance is *${formatMoney(wallet.currency as Currency, balance)}*.\n` +
-        (wallet.virtual_account_number
-          ? `Account: ${wallet.virtual_account_number} (${wallet.virtual_bank_name})`
-          : `Wallet: ${wallet.reference}`),
+      body: summary,
       buttonTitle: 'Menu',
       sections: [
         {
@@ -196,6 +338,7 @@ export class MessageRouter {
         },
       ],
     });
+    await this.conversation.record(user.id, 'assistant', summary);
   }
 
   /** Route a tapped quick-action / beneficiary button (used when no txn is pending). */
@@ -300,5 +443,8 @@ export class MessageRouter {
 
   private async send(user: UserRow, body: string): Promise<void> {
     await this.channel.send({ to: user.wa_phone, kind: 'text', body });
+    // Capture the assistant turn so follow-up messages keep the thread's context
+    // (e.g. remembering we just asked "who should I send it to?").
+    await this.conversation.record(user.id, 'assistant', body);
   }
 }

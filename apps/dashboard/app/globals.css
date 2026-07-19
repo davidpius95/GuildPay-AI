@@ -83,3 +83,62 @@ tr:last-child td { border-bottom: none; }
 .btn:hover { border-color: var(--accent); }
 .btn.danger { color: var(--red); border-color: rgba(224,90,90,0.4); background: rgba(224,90,90,0.08); }
 .btn.danger:hover { background: rgba(224,90,90,0.18); border-color: var(--red); }
+
+/* ── Links inside tables/detail ─────────────────────────────────────────── */
+td a, .crumb a { color: var(--accent); }
+td a:hover { text-decoration: underline; }
+.crumb { margin: 0 0 0.75rem; font-size: 0.85rem; }
+.crumb a { color: var(--muted); }
+.crumb a:hover { color: var(--text); }
+
+/* ── Detail header ──────────────────────────────────────────────────────── */
+.detail-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+.detail-head h2 { margin: 0; font-size: 1.05rem; }
+
+/* ── Key/value definition lists ─────────────────────────────────────────── */
+dl.kv { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; gap: 0.5rem 1rem; margin: 0; font-size: 0.85rem; }
+dl.kv dt { color: var(--muted); }
+dl.kv dd { margin: 0; word-break: break-word; }
+
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+.form { display: flex; flex-direction: column; gap: 0.9rem; }
+.form label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: var(--muted); }
+.form-row { display: flex; gap: 0.9rem; flex-wrap: wrap; }
+.form-row label { flex: 1; min-width: 140px; }
+input, select { background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px; color: var(--text); padding: 0.5rem 0.6rem; font-size: 0.85rem; font-family: inherit; }
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.small { padding: 0.2rem 0.5rem; font-size: 0.72rem; }
+.danger-zone { display: flex; gap: 0.5rem; margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+
+/* ── Filters + pager ────────────────────────────────────────────────────── */
+.filters { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1.25rem; align-items: center; }
+.filters input { min-width: 240px; flex: 1; }
+.pager { display: flex; align-items: center; gap: 1rem; justify-content: center; margin-top: 1.25rem; }
+.pager .n { color: var(--muted); font-size: 0.8rem; }
+
+/* ── Chips (actor / ledger direction) ───────────────────────────────────── */
+.chip { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 6px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; background: rgba(139,147,167,0.15); color: var(--muted); }
+.chip.admin { background: rgba(91,140,255,0.16); color: var(--accent); }
+.chip.system { background: rgba(139,147,167,0.15); color: var(--muted); }
+.chip.user { background: rgba(53,194,140,0.15); color: var(--green); }
+.chip.credit { background: rgba(53,194,140,0.15); color: var(--green); }
+.chip.debit { background: rgba(224,90,90,0.15); color: var(--red); }
+
+/* ── Audit list ─────────────────────────────────────────────────────────── */
+.audit-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.82rem; }
+.audit-list li { display: flex; align-items: center; gap: 0.6rem; }
+.audit-list .n { color: var(--muted); min-width: 62px; font-size: 0.78rem; }
+
+/* ── Horizontal bars (analytics) ────────────────────────────────────────── */
+.hbar-row { display: grid; grid-template-columns: 130px 1fr 42px; align-items: center; gap: 0.7rem; padding: 0.35rem 0; font-size: 0.82rem; }
+.hbar-label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { background: var(--panel-2); border-radius: 5px; height: 10px; overflow: hidden; }
+.hbar-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #3b63c7); border-radius: 5px; }
+.hbar-val { text-align: right; color: var(--text); }
+
+/* ── Misc ───────────────────────────────────────────────────────────────── */
+.notice { color: var(--amber); font-size: 0.85rem; }
+.meta { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

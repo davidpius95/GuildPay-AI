@@ -17,6 +17,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <a className="link" href="/">
             Overview
           </a>
+          <a className="link" href="/analytics">
+            Analytics
+          </a>
           <a className="link" href="/transactions">
             Transactions
           </a>
@@ -31,6 +34,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </a>
           <a className="link" href="/disputes">
             Disputes
+          </a>
+          <a className="link" href="/audit">
+            Audit
+          </a>
+          <a className="link" href="/tools">
+            Tools
           </a>
           <div className="spacer" />
           <div className="live">

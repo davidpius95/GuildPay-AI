@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getSettlements } from '../../lib/api';
 import { money, titleize } from '../../lib/format';
 
@@ -43,7 +44,9 @@ export default async function Settlements() {
                 )}
                 {rows.map((s) => (
                   <tr key={s.id}>
-                    <td className="mono n">{s.id}</td>
+                    <td className="mono n">
+                      <Link href={`/settlements/${s.id}`}>{s.id}</Link>
+                    </td>
                     <td><span className={`badge ${s.status === 'completed' ? 'completed' : 'pending'}`}>{titleize(s.status)}</span></td>
                     <td className="mono">{money(s.currency, s.netAmount)}</td>
                     <td className="mono n">{money(s.currency, s.grossAmount)}</td>

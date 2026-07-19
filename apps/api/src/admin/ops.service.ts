@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FlutterwavePartnerAdapter } from '../partner/flutterwave-partner.adapter';
-import type { Dispute, ListPage, MerchantBalance, Settlement } from '../partner/partner-adapter';
+import type { Bank, Dispute, ListPage, MerchantBalance, Settlement } from '../partner/partner-adapter';
+import type { NameEnquiryResult } from '@guildpay/shared';
 
 /**
  * OpsService — merchant-global operational views for the admin dashboard:
@@ -32,5 +33,19 @@ export class OpsService {
 
   getDispute(id: string): Promise<Dispute> {
     return this.flw.getDispute(id);
+  }
+
+  /** Banks for the NGN rail — used to populate the name-enquiry lookup tool. */
+  listBanks(): Promise<Bank[]> {
+    return this.flw.listBanks();
+  }
+
+  /**
+   * Resolve an account holder's name for a bank + account number. Read-only
+   * lookup (the same check a payout uses) so admins can verify an account without
+   * sending money.
+   */
+  nameEnquiry(accountNumber: string, bankCode: string): Promise<NameEnquiryResult> {
+    return this.flw.nameEnquiry(accountNumber, bankCode);
   }
 }

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getUsers } from '../../lib/queries';
 import { money, timeAgo } from '../../lib/format';
 import { resetUser, deleteUser, demoReset } from './actions';
@@ -57,7 +58,9 @@ export default async function Users() {
               {users.map((u) => (
                 <tr key={u.id}>
                   <td className="n">{timeAgo(u.created_at)}</td>
-                  <td>{u.full_name ?? <span className="n">—</span>}</td>
+                  <td>
+                    <Link href={`/users/${u.id}`}>{u.full_name ?? 'View'}</Link>
+                  </td>
                   <td className="mono n">{maskPhone(u.wa_phone)}</td>
                   <td className="n">{u.email ?? '—'}</td>
                   <td>{u.market ?? '—'}</td>

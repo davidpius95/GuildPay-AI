@@ -1,6 +1,14 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
 import { PG_POOL } from '../database/database.constants';
+
+/** Validate a value is in an allowed set, else 400 — keeps bad input out of SQL. */
+function oneOf<T extends string>(value: string, allowed: readonly T[]): T {
+  if (!allowed.includes(value as T)) {
+    throw new BadRequestException(`value "${value}" must be one of: ${allowed.join(', ')}`);
+  }
+  return value as T;
+}
 
 export interface AdminUser {
   id: string;
@@ -28,6 +36,84 @@ export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+
+  /** Editable user fields an admin may change. All optional; only provided keys are written. */
+  private static readonly EDITABLE = {
+    full_name: (v: unknown) => (v == null ? null : String(v).slice(0, 120)),
+    email: (v: unknown) => (v == null || v === '' ? null : String(v).slice(0, 200)),
+    status: (v: unknown) => oneOf(String(v), ['pending', 'active', 'frozen', 'closed']),
+    kyc_status: (v: unknown) => oneOf(String(v), ['pending', 'verified', 'failed']),
+  } as const;
+
+  /**
+   * Update a user's profile/status/KYC fields. Non-money CRUD only — this never
+   * touches wallets, balances, or the ledger. Validates each field against its
+   * allowed set, writes the change to audit_events, and no-ops on an empty patch.
+   */
+  async updateUser(
+    userId: string,
+    patch: Partial<Record<keyof typeof AdminService.EDITABLE, unknown>>,
+  ): Promise<void> {
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    const applied: Record<string, unknown> = {};
+
+    for (const [key, coerce] of Object.entries(AdminService.EDITABLE)) {
+      if (!(key in patch)) continue;
+      const value = coerce(patch[key as keyof typeof AdminService.EDITABLE]);
+      values.push(value);
+      sets.push(`${key} = $${values.length}`);
+      applied[key] = value;
+    }
+    if (sets.length === 0) return;
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      values.push(userId);
+      await client.query(
+        `update public.users set ${sets.join(', ')} where id = $${values.length}`,
+        values,
+      );
+      await client.query(
+        `insert into public.audit_events (user_id, actor, action, entity, entity_id, metadata)
+         values ($1, 'admin', 'user_updated', 'user', $2, $3)`,
+        [userId, userId, applied],
+      );
+      await client.query('commit');
+      this.logger.log(`user ${userId} updated: ${Object.keys(applied).join(', ')}`);
+    } catch (err) {
+      await client.query('rollback').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Remove a saved beneficiary. Audited; verifies it belongs to the given user. */
+  async deleteBeneficiary(userId: string, beneficiaryId: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const { rowCount } = await client.query(
+        'delete from public.beneficiaries where id = $1 and user_id = $2',
+        [beneficiaryId, userId],
+      );
+      if (rowCount) {
+        await client.query(
+          `insert into public.audit_events (user_id, actor, action, entity, entity_id)
+           values ($1, 'admin', 'beneficiary_deleted', 'beneficiary', $2)`,
+          [userId, beneficiaryId],
+        );
+      }
+      await client.query('commit');
+    } catch (err) {
+      await client.query('rollback').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 
   async listUsers(): Promise<AdminUser[]> {
     const { rows } = await this.pool.query<AdminUser>(

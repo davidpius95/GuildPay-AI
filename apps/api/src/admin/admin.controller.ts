@@ -1,11 +1,13 @@
 import { timingSafeEqual } from 'node:crypto';
 import {
+  Body,
   Controller,
   Delete,
   Get,
   Headers,
   HttpCode,
   Param,
+  Patch,
   Post,
   Query,
   UnauthorizedException,
@@ -39,6 +41,30 @@ export class AdminController {
   async users(@Headers('x-admin-token') token?: string) {
     this.assertToken(token);
     return this.admin.listUsers();
+  }
+
+  @Patch('admin/users/:id')
+  @HttpCode(200)
+  async updateUser(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Headers('x-admin-token') token?: string,
+  ) {
+    this.assertToken(token);
+    await this.admin.updateUser(id, body ?? {});
+    return { status: 'ok' };
+  }
+
+  @Delete('admin/users/:id/beneficiaries/:beneficiaryId')
+  @HttpCode(200)
+  async deleteBeneficiary(
+    @Param('id') id: string,
+    @Param('beneficiaryId') beneficiaryId: string,
+    @Headers('x-admin-token') token?: string,
+  ) {
+    this.assertToken(token);
+    await this.admin.deleteBeneficiary(id, beneficiaryId);
+    return { status: 'ok' };
   }
 
   @Post('admin/users/:id/reset')
@@ -103,6 +129,25 @@ export class AdminController {
   async dispute(@Param('id') id: string, @Headers('x-admin-token') token?: string) {
     this.assertToken(token);
     return this.ops.getDispute(id);
+  }
+
+  @Get('admin/banks')
+  async banks(@Headers('x-admin-token') token?: string) {
+    this.assertToken(token);
+    return this.ops.listBanks();
+  }
+
+  @Get('admin/name-enquiry')
+  async nameEnquiry(
+    @Query('account') account?: string,
+    @Query('bankCode') bankCode?: string,
+    @Headers('x-admin-token') token?: string,
+  ) {
+    this.assertToken(token);
+    if (!account || !bankCode) {
+      return { error: 'account and bankCode are required' };
+    }
+    return this.ops.nameEnquiry(account, bankCode);
   }
 }
 

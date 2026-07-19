@@ -61,6 +61,27 @@ async function get<T>(path: string): Promise<ApiResult<T>> {
   }
 }
 
+export interface Bank {
+  code: string;
+  name: string;
+}
+
+export interface NameEnquiry {
+  accountNumber?: string;
+  accountName?: string;
+  bankCode?: string;
+  error?: string;
+}
+
 export const getMerchantBalances = () => get<MerchantBalance[]>('/v1/admin/balances');
 export const getSettlements = () => get<Settlement[]>('/v1/admin/settlements');
 export const getDisputes = () => get<Dispute[]>('/v1/admin/disputes');
+export const getSettlement = (id: string) =>
+  get<Settlement>(`/v1/admin/settlements/${encodeURIComponent(id)}`);
+export const getDispute = (id: string) =>
+  get<Dispute>(`/v1/admin/disputes/${encodeURIComponent(id)}`);
+export const getBanks = () => get<Bank[]>('/v1/admin/banks');
+export const nameEnquiry = (account: string, bankCode: string) =>
+  get<NameEnquiry>(
+    `/v1/admin/name-enquiry?account=${encodeURIComponent(account)}&bankCode=${encodeURIComponent(bankCode)}`,
+  );

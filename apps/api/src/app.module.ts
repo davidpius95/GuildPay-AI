@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { HealthController } from './health/health.controller';
 import { DatabaseModule } from './database/database.module';
+import { RedisModule } from './redis/redis.module';
 import { ChannelModule } from './channel/channel.module';
 import { AiModule } from './ai/ai.module';
 import { SttModule } from './stt/stt.module';
@@ -33,6 +34,7 @@ import { AdminModule } from './admin/admin.module';
       },
     }),
     DatabaseModule,
+    RedisModule,
     ChannelModule,
     AiModule,
     SttModule,

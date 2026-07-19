@@ -117,8 +117,15 @@ export class OnboardingService {
     return true;
   }
 
+  /**
+   * Verify the government ID with the rail BEFORE advancing. For NGN this
+   * provisions the permanent NUBAN, which makes Flutterwave validate the BVN and
+   * reject a mismatch — so a wrong/invalid BVN cannot pass this step. On failure
+   * we stay on the KYC step and re-prompt; no wallet or account number is created.
+   */
   private async stepKyc(user: UserRow, msg: InboundMessage): Promise<boolean> {
     const market = (user.market ?? 'NG') as Market;
+    const currency = MARKET_CURRENCY[market];
     const kyc = (msg.text ?? '').replace(/\s/g, '');
     if (!/^\d{11}$/.test(kyc)) {
       await this.text(
@@ -127,10 +134,68 @@ export class OnboardingService {
       );
       return true;
     }
-    await this.users.update(user.id, { kyc_id: kyc, onboarding_step: 'pin' });
+
+    const firstName = user.first_name ?? (user.full_name ?? '').trim().split(/\s+/)[0];
+    const lastName = user.last_name ?? firstName;
+    const reference = `GPA-${market}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    let account: CreateVirtualAccountResult;
+    try {
+      account = await this.partners.forCurrency(currency).createVirtualAccount({
+        userRef: reference,
+        email: user.email ?? this.syntheticEmail(user.wa_phone),
+        firstName: firstName || undefined,
+        lastName: lastName || firstName || undefined,
+        phone: user.wa_phone,
+        bvn: kyc,
+      });
+    } catch (err) {
+      // Rail rejected the ID (e.g. BVN mismatch). Never log the raw ID.
+      this.logger.warn(`KYC verification failed for user ${user.id}: ${(err as Error).message}`);
+      await this.users.update(user.id, { kyc_status: 'failed' });
+      await this.audit.record({
+        userId: user.id,
+        action: 'kyc_failed',
+        entity: 'user',
+        entityId: user.id,
+        metadata: { type: KYC_LABEL[market].toLowerCase() },
+      });
+      await this.text(
+        user.wa_phone,
+        `❌ I couldn't verify that ${KYC_LABEL[market]} with your bank.\n\n` +
+          `Please double-check the 11 digits and send your *${KYC_LABEL[market]}* again (numbers only).`,
+      );
+      return true; // stay on the KYC step — do not advance
+    }
+
+    // Verified → create the wallet and attach its funding account now.
+    const wallet = await this.wallets.create({ userId: user.id, reference, currency, market });
+    await this.wallets.setVirtualAccount(
+      wallet.id,
+      account.accountNumber,
+      account.bankName,
+      account.providerRef,
+    );
+    await this.users.update(user.id, { kyc_id: kyc, kyc_status: 'verified', onboarding_step: 'pin' });
+    // Never log/audit the full account number or BVN.
+    await this.audit.record({
+      userId: user.id,
+      action: 'wallet_created',
+      entity: 'wallet',
+      entityId: wallet.id,
+      metadata: { reference, currency },
+    });
+    await this.audit.record({
+      userId: user.id,
+      action: 'virtual_account_created',
+      entity: 'wallet',
+      entityId: wallet.id,
+      metadata: { bank: account.bankName },
+    });
+
     await this.text(
       user.wa_phone,
-      '🔐 Now set your *4-digit transaction PIN* (numbers only).\n\n' +
+      `✅ ${KYC_LABEL[market]} verified.\n\n` +
+        '🔐 Now set your *4-digit transaction PIN* (numbers only).\n\n' +
         "You'll enter this PIN to approve every transfer, so keep it secret. " +
         'You can delete your message after I confirm it.',
     );
@@ -169,83 +234,45 @@ export class OnboardingService {
 
     const market = (user.market ?? 'NG') as Market;
     const currency = MARKET_CURRENCY[market];
-    const reference = `GPA-${market}-${randomBytes(3).toString('hex').toUpperCase()}`;
-    const wallet = await this.wallets.create({ userId: user.id, reference, currency, market });
+    // The wallet + funding account were created at the verified KYC step; consent
+    // only activates the user. Guard in case provisioning somehow never ran.
+    const [wallet] = await this.wallets.findByUserId(user.id);
+    if (!wallet) {
+      await this.users.update(user.id, { onboarding_step: 'kyc' });
+      await this.text(
+        user.wa_phone,
+        `Let's re-verify your identity first. Please enter your 11-digit *${KYC_LABEL[market]}* (numbers only).`,
+      );
+      return true;
+    }
+
     await this.users.update(user.id, { status: 'active', onboarding_step: 'done', consent_at: 'now' });
     await this.audit.record({
       userId: user.id,
-      action: 'wallet_created',
-      entity: 'wallet',
-      entityId: wallet.id,
-      metadata: { reference, currency },
+      action: 'onboarding_completed',
+      entity: 'user',
+      entityId: user.id,
+      metadata: { reference: wallet.reference, currency },
     });
 
-    // Provision the account the user funds into via the currency's partner rail
-    // (NGN → real NUBAN; QAR → simulated). Non-blocking: onboarding still completes
-    // if provisioning fails — the user can fund later.
-    const virtualAccount = await this.provisionAccount(user, wallet.id, reference, currency);
-
     const symbol = CURRENCY_META[currency].symbol;
-    const fundingBlock = virtualAccount
+    const fundingBlock = wallet.virtual_account_number
       ? `*Fund your wallet* — transfer to:\n` +
-        `Bank: ${virtualAccount.bankName}\n` +
-        `Account: ${virtualAccount.accountNumber}\n` +
+        `Bank: ${wallet.virtual_bank_name}\n` +
+        `Account: ${wallet.virtual_account_number}\n` +
         `Name: ${user.full_name ?? 'GuildPay user'}\n\n`
       : '';
     await this.text(
       user.wa_phone,
       `🎉 You're all set, ${user.full_name ?? 'there'}!\n\n` +
         `*Your GuildPay wallet*\n` +
-        `Reference: ${reference}\n` +
+        `Reference: ${wallet.reference}\n` +
         `Currency: ${currency}\n` +
         `Balance: ${symbol}0.00\n\n` +
         fundingBlock +
         `You can now fund your wallet, send money, buy airtime and pay bills — just tell me what you need. 💬`,
     );
     return true;
-  }
-
-  /** Create + persist the funding account (NGN NUBAN / QAR simulated). Never blocks onboarding. */
-  private async provisionAccount(
-    user: UserRow,
-    walletId: string,
-    reference: string,
-    currency: Currency,
-  ): Promise<CreateVirtualAccountResult | null> {
-    const firstName = user.first_name ?? (user.full_name ?? '').trim().split(/\s+/)[0];
-    const lastName = user.last_name ?? firstName;
-    try {
-      const account = await this.partners.forCurrency(currency).createVirtualAccount({
-        userRef: reference,
-        email: user.email ?? this.syntheticEmail(user.wa_phone),
-        firstName: firstName || undefined,
-        lastName: lastName || firstName || undefined,
-        phone: user.wa_phone,
-        bvn: user.kyc_id ?? undefined,
-      });
-      await this.wallets.setVirtualAccount(walletId, account.accountNumber, account.bankName, account.providerRef);
-      // BVN was accepted by the rail at account creation → mark KYC verified.
-      await this.users.update(user.id, { kyc_status: 'verified' });
-      // Never log/audit the full account number or BVN.
-      await this.audit.record({
-        userId: user.id,
-        action: 'virtual_account_created',
-        entity: 'wallet',
-        entityId: walletId,
-        metadata: { bank: account.bankName },
-      });
-      return account;
-    } catch (err) {
-      this.logger.error(`account provisioning failed for wallet ${walletId}: ${(err as Error).message}`);
-      await this.users.update(user.id, { kyc_status: 'failed' });
-      await this.audit.record({
-        userId: user.id,
-        action: 'virtual_account_failed',
-        entity: 'wallet',
-        entityId: walletId,
-      });
-      return null;
-    }
   }
 
   /** Fallback email if somehow missing (shouldn't happen post-M-email-step). */

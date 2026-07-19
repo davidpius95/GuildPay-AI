@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { AiService } from '../ai/ai.service';
+import type { ChatMessage } from '../ai/ai-provider';
 
 /** Intents the orchestrator can route (subset of the full catalogue). */
 export const IntentResultSchema = z.object({
@@ -39,7 +40,11 @@ Telling numbers apart (Nigeria): a BANK ACCOUNT NUMBER is exactly 10 digits; a P
 bank (GTBank, Access, Zenith, Opay, Kuda, any "MFB"/microfinance, etc.) OR the recipient number
 is 10 digits, the intent is "bank_transfer" — fill accountNumber and bankName, leave recipientRef null.
 Messages may span multiple lines, e.g. "Send 200 to 9907126626\nIndulge mfb\nDavid Uzochukwu"
-→ bank_transfer, amount 200, accountNumber "9907126626", bankName "Indulge mfb".`;
+→ bank_transfer, amount 200, accountNumber "9907126626", bankName "Indulge mfb".
+Prior turns may be supplied as context. Use them to resolve follow-ups and references —
+e.g. after you asked "how much?" a bare "5000" means amount 5000 for that same transfer;
+"make it 3000" adjusts the amount; "send her the same" reuses the last recipient. Still never
+invent a slot the conversation has not actually provided.`;
 
 /**
  * Turns free-text into a validated intent. The LLM only interprets; it never
@@ -51,13 +56,14 @@ export class OrchestratorService {
 
   constructor(private readonly ai: AiService) {}
 
-  async parse(text: string): Promise<IntentResult> {
+  async parse(text: string, history: ChatMessage[] = []): Promise<IntentResult> {
     for (let attempt = 1; attempt <= 2; attempt++) {
       let raw: string;
       try {
         raw = await this.ai.complete(
           [
             { role: 'system', content: SYSTEM },
+            ...history,
             { role: 'user', content: text },
           ],
           { temperature: 0, maxTokens: 300 },
