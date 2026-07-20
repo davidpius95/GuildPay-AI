@@ -342,15 +342,84 @@ export function payoutReason(message: string): string {
   return raw;
 }
 
-/** Resolve a free-text bank name to a single Bank, or null if none/ambiguous. */
+/** Generic words that carry no disambiguating signal in a Nigerian bank name. */
+const GENERIC_BANK_TOKENS = new Set([
+  'bank', 'plc', 'ltd', 'limited', 'the', 'nigeria', 'nig', 'company', 'co',
+]);
+
+/**
+ * Common abbreviations → their canonical name text. The /banks/NG list uses full
+ * legal names ("Guaranty Trust Bank", "United Bank for Africa"), but users and
+ * Flutterwave virtual accounts use short forms ("GTBank", "UBA"). Applied to both
+ * sides symmetrically, so matching stays consistent regardless of which form each
+ * uses. Word-boundary anchored to avoid mangling unrelated names.
+ */
+const BANK_ALIASES: Array<[RegExp, string]> = [
+  [/\bgt\s*bank\b/g, 'guaranty trust'],
+  [/\bgtb\b/g, 'guaranty trust'],
+  [/\buba\b/g, 'united bank for africa'],
+  [/\bfcmb\b/g, 'first city monument bank'],
+  [/\b(?:fbn|firstbank)\b/g, 'first bank'],
+];
+
+/**
+ * Normalize a bank name into significant lowercase tokens. Critically, it expands
+ * the "MFB" ⇄ "microfinance bank" abbreviation and drops generic words, so
+ * Flutterwave's two spellings of the same bank — e.g. "Indulge MFB" on a virtual
+ * account vs "INDULGE MICROFINANCE BANK" in /banks/NG — tokenize identically.
+ */
+function bankTokens(name: string): string[] {
+  let s = name.toLowerCase().replace(/&/g, ' and ');
+  for (const [pattern, canonical] of BANK_ALIASES) s = s.replace(pattern, canonical);
+  return s
+    .replace(/\bmfb\b/g, ' microfinance bank ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length > 0 && !GENERIC_BANK_TOKENS.has(t));
+}
+
+/**
+ * Resolve a free-text bank name to a single Bank from the NIP list, or null if
+ * none/ambiguous. Matches on normalized token *sets* rather than raw substrings,
+ * because Flutterwave names the same bank inconsistently ("Indulge MFB" vs
+ * "INDULGE MICROFINANCE BANK") — a substring match misses it entirely. Prefers a
+ * full token-set match, then the tightest superset; returns null only when the
+ * query is empty or there is no confident, unambiguous winner.
+ */
 export function resolveBank(banks: Bank[], query: string): Bank | null {
-  const q = query.trim().toLowerCase();
-  if (!q) return null;
-  const exact = banks.filter((b) => b.name.toLowerCase() === q);
-  if (exact.length === 1) return exact[0]!;
-  const partial = banks.filter((b) => {
-    const n = b.name.toLowerCase();
-    return n.includes(q) || q.includes(n);
-  });
-  return partial.length === 1 ? partial[0]! : null;
+  const q = bankTokens(query);
+  if (q.length === 0) return null;
+
+  let best: Bank | null = null;
+  let bestScore = -Infinity;
+  let runnerUpScore = -Infinity;
+
+  for (const b of banks) {
+    const t = bankTokens(b.name);
+    if (t.length === 0) continue;
+
+    const shared = q.filter((x) => t.includes(x)).length;
+    if (shared === 0) continue;
+
+    const queryInsideBank = q.every((x) => t.includes(x));
+    const bankInsideQuery = t.every((x) => q.includes(x));
+    // Require one set to fully contain the other — a loose partial overlap
+    // (e.g. sharing only "microfinance") is not a confident match.
+    if (!queryInsideBank && !bankInsideQuery) continue;
+
+    const exactSet = queryInsideBank && bankInsideQuery ? 1 : 0;
+    const extraTokens = Math.abs(t.length - q.length);
+    const score = exactSet * 1000 + shared * 10 - extraTokens;
+
+    if (score > bestScore) {
+      runnerUpScore = bestScore;
+      bestScore = score;
+      best = b;
+    } else if (score > runnerUpScore) {
+      runnerUpScore = score;
+    }
+  }
+
+  // Only return on a strict, unambiguous winner.
+  return best && bestScore > runnerUpScore ? best : null;
 }

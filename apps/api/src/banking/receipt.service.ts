@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { join } from 'node:path';
 import { Resvg } from '@resvg/resvg-js';
 import type { Currency } from '@guildpay/shared';
 import { formatMoney } from './money';
@@ -30,9 +31,27 @@ const MUTED = '#667781';
 const LINE = '#e7ebee';
 const BG = '#e9edf0';
 
+/** Font family used in the SVG markup. Must match the family name inside the TTF files. */
+const FONT = 'Inter';
+
+/**
+ * Bundled font files resolved relative to the compiled JS output.
+ * NestJS copies these from src/banking/fonts/ → dist/banking/fonts/ via the
+ * "assets" config in nest-cli.json, so __dirname always reaches them.
+ */
+const FONT_DIR = join(__dirname, 'fonts');
+const FONT_FILES = [
+  join(FONT_DIR, 'Inter-Regular.ttf'),   // weight 400
+  join(FONT_DIR, 'Inter-Bold.ttf'),       // weight 700
+  join(FONT_DIR, 'Inter-ExtraBold.ttf'),  // weight 800
+];
+
 /**
  * Renders a GuildPay-branded transaction receipt (WhatsApp green) as a PNG,
  * so it can be sent back to the user as a WhatsApp image. SVG → PNG via resvg.
+ *
+ * Fonts are BUNDLED with the app (Inter TTFs) so rendering is identical across
+ * macOS dev, CI, and Docker production — no system fonts required.
  */
 @Injectable()
 export class ReceiptService {
@@ -42,7 +61,11 @@ export class ReceiptService {
     const svg = this.svg(data);
     const resvg = new Resvg(svg, {
       fitTo: { mode: 'width', value: 760 },
-      font: { loadSystemFonts: true, defaultFontFamily: 'DejaVu Sans' },
+      font: {
+        loadSystemFonts: false,
+        fontFiles: FONT_FILES,
+        defaultFontFamily: FONT,
+      },
       background: BG,
     });
     return Buffer.from(resvg.render().asPng());
@@ -69,8 +92,8 @@ export class ReceiptService {
         const size = long ? 15 : 20;
         const shown = long ? value : clip(value, 26);
         const block =
-          `<text x="72" y="${y}" font-family="DejaVu Sans" font-size="20" fill="${MUTED}">${esc(label)}</text>` +
-          `<text x="688" y="${y}" text-anchor="end" font-family="DejaVu Sans" font-weight="700" font-size="${size}" fill="${INK}">${esc(shown)}</text>` +
+          `<text x="72" y="${y}" font-family="${FONT}" font-size="20" fill="${MUTED}">${esc(label)}</text>` +
+          `<text x="688" y="${y}" text-anchor="end" font-family="${FONT}" font-weight="700" font-size="${size}" fill="${INK}">${esc(shown)}</text>` +
           `<line x1="72" y1="${y + 22}" x2="688" y2="${y + 22}" stroke="${LINE}" stroke-width="1.5" stroke-dasharray="2 5"/>`;
         y += 56;
         return block;
@@ -85,14 +108,14 @@ export class ReceiptService {
   <rect x="40" y="40" width="680" height="${footerY - 62}" rx="28" fill="#ffffff"/>
 
   <!-- header -->
-  <text x="72" y="118" font-family="DejaVu Sans" font-weight="800" font-size="34" fill="${INK}">Guild<tspan fill="${GREEN}">Pay</tspan> AI</text>
+  <text x="72" y="118" font-family="${FONT}" font-weight="800" font-size="34" fill="${INK}">Guild<tspan fill="${GREEN}">Pay</tspan> AI</text>
   <rect x="512" y="88" width="176" height="42" rx="21" fill="${statusColor}"/>
-  <text x="600" y="116" text-anchor="middle" font-family="DejaVu Sans" font-weight="700" font-size="18" fill="#ffffff">${d.status}</text>
+  <text x="600" y="116" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="18" fill="#ffffff">${d.status}</text>
 
   <!-- amount -->
-  <text x="380" y="248" text-anchor="middle" font-family="DejaVu Sans" font-weight="800" font-size="76" fill="${GREEN_DEEP}">${esc(amount)}</text>
-  <text x="380" y="290" text-anchor="middle" font-family="DejaVu Sans" font-size="20" fill="${MUTED}">${esc(when)}</text>
-  ${d.feeNote ? `<text x="380" y="318" text-anchor="middle" font-family="DejaVu Sans" font-size="16" fill="${GREEN_DEEP}">${esc(clip(d.feeNote, 46))}</text>` : ''}
+  <text x="380" y="248" text-anchor="middle" font-family="${FONT}" font-weight="800" font-size="76" fill="${GREEN_DEEP}">${esc(amount)}</text>
+  <text x="380" y="290" text-anchor="middle" font-family="${FONT}" font-size="20" fill="${MUTED}">${esc(when)}</text>
+  ${d.feeNote ? `<text x="380" y="318" text-anchor="middle" font-family="${FONT}" font-size="16" fill="${GREEN_DEEP}">${esc(clip(d.feeNote, 46))}</text>` : ''}
 
   <line x1="72" y1="340" x2="688" y2="340" stroke="${LINE}" stroke-width="2"/>
 
@@ -101,9 +124,9 @@ export class ReceiptService {
 
   <!-- footer -->
   <rect x="40" y="${footerY - 6}" width="680" height="140" rx="28" fill="#0b141a"/>
-  <text x="380" y="${footerY + 40}" text-anchor="middle" font-family="DejaVu Sans" font-weight="700" font-size="22" fill="#ffffff">Guild<tspan fill="${GREEN}">Pay</tspan> AI</text>
-  <text x="380" y="${footerY + 72}" text-anchor="middle" font-family="DejaVu Sans" font-size="18" fill="#8696a0">Everyday money, made conversational.</text>
-  <text x="380" y="${footerY + 100}" text-anchor="middle" font-family="DejaVu Sans" font-size="15" fill="#5a6b74">Send money, buy airtime &amp; pay bills — just by chatting.</text>
+  <text x="380" y="${footerY + 40}" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="22" fill="#ffffff">Guild<tspan fill="${GREEN}">Pay</tspan> AI</text>
+  <text x="380" y="${footerY + 72}" text-anchor="middle" font-family="${FONT}" font-size="18" fill="#8696a0">Everyday money, made conversational.</text>
+  <text x="380" y="${footerY + 100}" text-anchor="middle" font-family="${FONT}" font-size="15" fill="#5a6b74">Send money, buy airtime &amp; pay bills — just by chatting.</text>
 </svg>`;
   }
 }
@@ -121,3 +144,4 @@ function fmtDate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `on ${p(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+

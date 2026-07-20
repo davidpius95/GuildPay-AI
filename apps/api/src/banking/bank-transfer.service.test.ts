@@ -86,8 +86,56 @@ describe('resolveBank', () => {
   it('matches exact and unique-partial names, rejects ambiguous/unknown', () => {
     expect(resolveBank(banks, 'GTBank')?.code).toBe('058');
     expect(resolveBank(banks, 'access')?.code).toBe('044');
-    expect(resolveBank(banks, 'bank')).toBeNull(); // ambiguous (both contain "bank")
+    expect(resolveBank(banks, 'bank')).toBeNull(); // only a generic token → no signal
     expect(resolveBank(banks, 'zenith')).toBeNull();
+  });
+
+  // Flutterwave names the same MFB two ways: "Indulge MFB" on the virtual account
+  // it hands the user, but "INDULGE MICROFINANCE BANK" in the /banks/NG list. The
+  // old substring matcher returned null for the payout — this is that regression.
+  it('resolves the "MFB" ⇄ "Microfinance Bank" abbreviation (Indulge case)', () => {
+    const list = [
+      { code: '090772', name: 'INDULGE MICROFINANCE BANK' },
+      { code: '070001', name: 'NPF MicroFinance Bank' },
+      { code: '090097', name: 'Ekondo MFB' },
+      { code: '058', name: 'GTBank' },
+    ];
+    expect(resolveBank(list, 'Indulge MFB')?.code).toBe('090772');
+    expect(resolveBank(list, 'indulge')?.code).toBe('090772');
+    expect(resolveBank(list, 'INDULGE MICROFINANCE BANK')?.code).toBe('090772');
+    // And the reverse abbreviation direction still resolves.
+    expect(resolveBank(list, 'Ekondo Microfinance Bank')?.code).toBe('090097');
+  });
+
+  it('picks the tightest match over a longer superset name', () => {
+    const list = [
+      { code: '044', name: 'Access Bank' },
+      { code: '063', name: 'Access Bank (Diamond)' },
+    ];
+    // "access" alone should resolve to plain Access Bank, not stay ambiguous.
+    expect(resolveBank(list, 'access')?.code).toBe('044');
+    expect(resolveBank(list, 'access diamond')?.code).toBe('063');
+  });
+
+  it('resolves common abbreviations against full legal names', () => {
+    const list = [
+      { code: '058', name: 'Guaranty Trust Bank' },
+      { code: '033', name: 'United Bank for Africa' },
+      { code: '011', name: 'First Bank PLC' },
+    ];
+    expect(resolveBank(list, 'GTBank')?.code).toBe('058');
+    expect(resolveBank(list, 'gtb')?.code).toBe('058');
+    expect(resolveBank(list, 'UBA')?.code).toBe('033');
+    expect(resolveBank(list, 'first bank')?.code).toBe('011');
+  });
+
+  it('still returns null when genuinely ambiguous', () => {
+    const list = [
+      { code: '070001', name: 'NPF MicroFinance Bank' },
+      { code: '070002', name: 'Fortis Microfinance Bank' },
+    ];
+    // Shares only the generic "microfinance" token with both → no confident winner.
+    expect(resolveBank(list, 'microfinance bank')).toBeNull();
   });
 });
 
