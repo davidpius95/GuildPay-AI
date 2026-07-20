@@ -114,11 +114,20 @@ export class FlutterwaveV4Client {
     const data = await this.request<
       Array<{ currency?: string; available_balance?: number; ledger_balance?: number }>
     >('GET', '/wallets/balances', undefined, randomUUID());
-    return (data ?? []).map((w) => ({
-      currency: w.currency ?? '',
-      availableBalance: Number(w.available_balance ?? 0),
-      ledgerBalance: Number(w.ledger_balance ?? w.available_balance ?? 0),
-    }));
+    return (data ?? [])
+      .map((w) => ({
+        currency: w.currency ?? '',
+        availableBalance: Number(w.available_balance ?? 0),
+        ledgerBalance: Number(w.ledger_balance ?? w.available_balance ?? 0),
+      }))
+      // v4 lists ~70 currencies; keep the markets we run plus any with a balance.
+      .filter(
+        (b) =>
+          b.currency === 'NGN' ||
+          b.currency === 'QAR' ||
+          b.availableBalance !== 0 ||
+          b.ledgerBalance !== 0,
+      );
   }
 
   private async request<T>(
