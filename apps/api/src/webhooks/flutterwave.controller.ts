@@ -19,6 +19,7 @@ import { TransactionsRepository } from '../database/transactions.repository';
 import { UsersRepository } from '../database/users.repository';
 import { AuditRepository } from '../database/audit.repository';
 import { WalletService } from '../banking/wallet.service';
+import { WalletFundingService } from '../banking/wallet-funding.service';
 import { formatMoney } from '../banking/money';
 
 /** Fields we read from a Flutterwave webhook envelope. */
@@ -59,6 +60,7 @@ export class FlutterwaveController {
     private readonly users: UsersRepository,
     private readonly audit: AuditRepository,
     private readonly wallet: WalletService,
+    private readonly funding: WalletFundingService,
   ) {}
 
   @Post()
@@ -136,41 +138,13 @@ export class FlutterwaveController {
       return;
     }
 
-    const currency = wallet.currency as Currency;
-    const amount = Number(verified.amount);
-    const txn = await this.txns.create({
-      walletId: wallet.id,
-      type: 'funding',
-      channel: 'system', // inbound webhook credit — not a user channel
-      currency,
-      amount,
+    await this.funding.creditInbound({
+      wallet,
+      amount: Number(verified.amount),
+      currency: wallet.currency as Currency,
       providerRef: flwRef,
-      status: 'completed',
+      source: 'bank_transfer',
     });
-    const balance = await this.wallet.credit(
-      wallet.id,
-      amount,
-      txn.id,
-      'Wallet Funding via Flutterwave',
-      flwRef
-    );
-    await this.audit.record({
-      userId: wallet.user_id,
-      action: 'wallet_funded',
-      entity: 'transaction',
-      entityId: txn.id,
-      metadata: { amount, source: 'bank_transfer' },
-    });
-
-    const user = await this.users.findById(wallet.user_id);
-    if (user) {
-      await this.channel.send({
-        to: user.wa_phone,
-        kind: 'text',
-        body: `💰 Received ${formatMoney(currency, amount)}.\nNew balance: ${formatMoney(currency, balance)}`,
-      });
-    }
-    this.logger.log(`wallet ${wallet.reference} funded ${amount} ${currency} (flw_ref=${flwRef})`);
   }
 
   /** Reconcile a NIP payout: confirm on success, reverse the debit on failure (idempotent). */

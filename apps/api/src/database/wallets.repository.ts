@@ -44,6 +44,15 @@ export class WalletsRepository {
     return rows[0] ?? null;
   }
 
+  /** Match a wallet by its provisioned NUBAN — used to credit inbound v4 funding. */
+  async findByVirtualAccountNumber(accountNumber: string): Promise<WalletRow | null> {
+    const { rows } = await this.pool.query<WalletRow>(
+      'select * from public.wallets where virtual_account_number = $1',
+      [accountNumber],
+    );
+    return rows[0] ?? null;
+  }
+
   async create(params: {
     userId: string;
     reference: string;

@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CURRENCY_META, type Currency, type InboundMessage, type Market } from '@guildpay/shared';
 import { CHANNEL_ADAPTER } from '../channel/channel.module';
 import type { ChannelAdapter } from '../channel/channel-adapter';
+import { WhatsappFlowService } from '../channel/whatsapp-flow.service';
 import { UsersRepository, type UserRow } from '../database/users.repository';
 import { WalletsRepository } from '../database/wallets.repository';
 import { AuditRepository } from '../database/audit.repository';
@@ -25,6 +26,7 @@ export class OnboardingService {
 
   constructor(
     @Inject(CHANNEL_ADAPTER) private readonly channel: ChannelAdapter,
+    private readonly flows: WhatsappFlowService,
     private readonly users: UsersRepository,
     private readonly wallets: WalletsRepository,
     private readonly audit: AuditRepository,
@@ -192,17 +194,27 @@ export class OnboardingService {
       metadata: { bank: account.bankName },
     });
 
-    await this.text(
-      user.wa_phone,
-      `✅ ${KYC_LABEL[market]} verified.\n\n` +
-        '🔐 Now set your *4-digit transaction PIN* (numbers only).\n\n' +
-        "You'll enter this PIN to approve every transfer, so keep it secret. " +
-        'You can delete your message after I confirm it.',
-    );
+    if (this.channel.name === 'meta' && this.flows.isEnabled()) {
+      await this.channel.send(
+        this.flows.buildSetupPinFlowMessage(
+          user.wa_phone,
+          user.id,
+          `✅ ${KYC_LABEL[market]} verified.\n\n🔐 Now set your *4-digit transaction PIN*.\nTap *Set PIN* to enter it securely.`
+        )
+      );
+    } else {
+      await this.text(
+        user.wa_phone,
+        `✅ ${KYC_LABEL[market]} verified.\n\n` +
+          '🔐 Now set your *4-digit transaction PIN* (numbers only).\n\n' +
+          "You'll enter this PIN to approve every transfer, so keep it secret. " +
+          'You can delete your message after I confirm it.',
+      );
+    }
     return true;
   }
 
-  /** Set the 4-digit transaction PIN (hashed; the raw PIN is never stored or logged). */
+  /** Set the 4-digit transaction PIN via chat fallback (hashed; the raw PIN is never stored or logged). */
   private async stepPin(user: UserRow, msg: InboundMessage): Promise<boolean> {
     const pin = (msg.text ?? '').replace(/\s/g, '');
     if (!this.pins.isValidFormat(pin)) {
@@ -216,6 +228,27 @@ export class OnboardingService {
       { id: 'consent_no', title: 'Cancel' },
     ]);
     return true;
+  }
+
+  /** Process the 4-digit transaction PIN received securely from the WhatsApp Flow modal. */
+  async submitPinFlow(userId: string, pin: string): Promise<'success' | 'stale' | 'invalid'> {
+    const user = await this.users.findById(userId);
+    if (!user || user.onboarding_step !== 'pin') return 'stale';
+
+    const cleanPin = pin.replace(/\s/g, '');
+    if (!this.pins.isValidFormat(cleanPin)) {
+      return 'invalid';
+    }
+
+    await this.users.update(user.id, { pin_hash: this.pins.hash(cleanPin), onboarding_step: 'consent' });
+    await this.audit.record({ userId: user.id, actor: 'user', action: 'pin_set', entity: 'user', entityId: user.id });
+    
+    // Push the next step to the chat asynchronously
+    await this.buttons(user.wa_phone, '✅ PIN saved.\n\nBy continuing you agree to GuildPay’s Terms & Privacy. Create your wallet now?', [
+      { id: 'consent_yes', title: 'I agree ✅' },
+      { id: 'consent_no', title: 'Cancel' },
+    ]);
+    return 'success';
   }
 
   private async stepConsent(user: UserRow, msg: InboundMessage): Promise<boolean> {

@@ -22,6 +22,7 @@ import {
   type FlowRequest,
 } from '../channel/whatsapp-flow.service';
 import { MessageRouter } from '../banking/message-router.service';
+import { OnboardingService } from '../onboarding/onboarding.service';
 
 /**
  * WhatsApp Flow data-exchange endpoint (encrypted).
@@ -39,6 +40,7 @@ export class WhatsappFlowController {
     private readonly meta: MetaCloudAdapter,
     private readonly flows: WhatsappFlowService,
     private readonly router: MessageRouter,
+    private readonly onboarding: OnboardingService,
   ) {}
 
   @Post()
@@ -87,19 +89,37 @@ export class WhatsappFlowController {
       return { version, screen: PIN_SCREEN, data: {} };
     }
 
-    // PIN submitted → verify token → run the existing PIN money-gate.
+    // PIN submitted → verify token → run the existing PIN money-gate or onboarding setup.
     if (request.action === 'data_exchange' && request.screen === PIN_SCREEN) {
-      const txnId = this.flows.verifyFlowToken(request.flow_token);
+      const tokenData = this.flows.verifyFlowToken(request.flow_token);
       const pin = typeof request.data?.['pin'] === 'string' ? (request.data['pin'] as string) : '';
-      if (!txnId) {
+      if (!tokenData) {
         // 427 → invalid/expired flow token; the client shows an error + closes.
         throw new HttpException('invalid flow token', 427);
       }
-      const result = await this.router.submitPinForTxn(txnId, pin);
-      const message =
-        result === 'dispatched'
-          ? 'Processing your transfer — check your WhatsApp chat for the confirmation.'
-          : 'This transfer is no longer pending. Please start again in the chat.';
+
+      let result: string;
+      let message: string;
+
+      if (tokenData.startsWith('onboard_')) {
+        const userId = tokenData.replace('onboard_', '');
+        result = await this.onboarding.submitPinFlow(userId, pin);
+        if (result === 'invalid') {
+          message = 'PIN must be exactly 4 digits. Please try again in the chat.';
+        } else if (result === 'stale') {
+          message = 'You have already set up your PIN. Please continue in the chat.';
+        } else {
+          message = 'PIN saved securely! Please check your chat to continue setup.';
+        }
+      } else {
+        const txnId = tokenData; // If not onboarding, the token is the txnId.
+        result = await this.router.submitPinForTxn(txnId, pin);
+        message =
+          result === 'dispatched'
+            ? 'Processing your transfer — check your WhatsApp chat for the confirmation.'
+            : 'This transfer is no longer pending. Please start again in the chat.';
+      }
+
       return {
         version,
         screen: FLOW_SUCCESS_SCREEN,

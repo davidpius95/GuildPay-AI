@@ -17,6 +17,7 @@ import type {
   Settlement,
   TransferResult,
 } from './partner-adapter';
+import { FlutterwaveV4Client } from './flutterwave-v4.client';
 
 /** Flutterwave v3 wraps every response in { status, message, data }. */
 interface FlwEnvelope<T> {
@@ -41,13 +42,32 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
   readonly currency: Currency = 'NGN';
   private readonly logger = new Logger(FlutterwavePartnerAdapter.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly v4: FlutterwaveV4Client,
+  ) {}
 
   /**
-   * Create a permanent NUBAN. Live permanent accounts require `bvn`; Flutterwave
-   * validates the BVN here and rejects a mismatch, so this doubles as BVN verification.
+   * Provision the NUBAN a user funds into. Routes to the v4 Wallets API when it's
+   * configured (so the issuing bank can be Wema/Sterling instead of Flutterwave's
+   * default MFB); otherwise uses the v3 permanent-account endpoint. Both reject a
+   * bad BVN synchronously, so this doubles as BVN verification during onboarding.
    */
   async createVirtualAccount(req: CreateVirtualAccountRequest): Promise<CreateVirtualAccountResult> {
+    return this.v4Enabled() ? this.createVirtualAccountV4(req) : this.createVirtualAccountV3(req);
+  }
+
+  /** v4 is used only when creds + a chosen issuing bank are all configured. */
+  private v4Enabled(): boolean {
+    return Boolean(
+      this.config.get<string>('FLW_V4_CLIENT_ID') &&
+        this.config.get<string>('FLW_V4_CLIENT_SECRET') &&
+        this.config.get<string>('FLW_VA_BANK_CODE'),
+    );
+  }
+
+  /** v3 permanent NUBAN — Flutterwave picks the issuing bank. */
+  private async createVirtualAccountV3(req: CreateVirtualAccountRequest): Promise<CreateVirtualAccountResult> {
     const fullName = [req.firstName, req.lastName].filter(Boolean).join(' ') || req.userRef;
     const data = await this.flw<{
       account_number: string;
@@ -68,6 +88,35 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
       accountNumber: data.account_number,
       bankName: data.bank_name,
       providerRef: data.order_ref ?? data.flw_ref ?? req.userRef,
+    };
+  }
+
+  /**
+   * v4 static NUBAN on the configured issuing bank (FLW_VA_BANK_CODE). Creates a
+   * customer, then the account, both keyed by the wallet reference for idempotency.
+   * Returns the same contract as v3 so onboarding/persistence are unchanged.
+   */
+  private async createVirtualAccountV4(req: CreateVirtualAccountRequest): Promise<CreateVirtualAccountResult> {
+    const bankCode = this.config.get<string>('FLW_VA_BANK_CODE')!;
+    const customer = await this.v4.createCustomer(
+      {
+        email: req.email,
+        firstName: req.firstName ?? req.userRef,
+        lastName: req.lastName,
+        phone: req.phone,
+      },
+      `cust:${req.userRef}`,
+    );
+    const va = await this.v4.createVirtualAccount({
+      reference: req.userRef,
+      customerId: customer.id,
+      bvn: req.bvn,
+      bankCode,
+    });
+    return {
+      accountNumber: va.accountNumber,
+      bankName: va.bankName,
+      providerRef: va.providerRef,
     };
   }
 

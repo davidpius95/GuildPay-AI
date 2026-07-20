@@ -14,6 +14,7 @@ import { KycService } from './kyc.service';
 import { TransactionHistoryService } from './transaction-history.service';
 import { ConversationService } from './conversation.service';
 import { PendingIntentService } from './pending-intent.service';
+import { WalletFundingService } from './wallet-funding.service';
 import { MessageRouter } from './message-router.service';
 
 /**
@@ -36,8 +37,9 @@ import { MessageRouter } from './message-router.service';
     TransactionHistoryService,
     ConversationService,
     PendingIntentService,
+    WalletFundingService,
     MessageRouter,
   ],
-  exports: [MessageRouter, WalletService, OtpService],
+  exports: [MessageRouter, WalletService, OtpService, WalletFundingService],
 })
 export class BankingModule {}

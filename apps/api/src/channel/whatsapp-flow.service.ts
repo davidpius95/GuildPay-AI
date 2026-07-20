@@ -78,6 +78,21 @@ export class WhatsappFlowService {
     };
   }
 
+  /** Build the outbound PIN Flow message for first-time PIN setup during onboarding. */
+  buildSetupPinFlowMessage(to: string, userId: string, body: string): OutboundFlow {
+    const mode = this.config.get<string>('WHATSAPP_FLOW_MODE') === 'draft' ? 'draft' : 'published';
+    return {
+      to,
+      kind: 'flow',
+      body,
+      flowId: this.config.get<string>('WHATSAPP_PIN_FLOW_ID') ?? '',
+      flowToken: this.signFlowToken(`onboard_${userId}`),
+      screenId: PIN_SCREEN,
+      buttonTitle: 'Set PIN',
+      mode,
+    };
+  }
+
   // ── flow token (binds a flow response to a specific pending txn) ────────────
 
   /** `<txnId>.<hmac>` — signed with the app secret; opaque to the client. */

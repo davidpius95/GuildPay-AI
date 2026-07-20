@@ -84,8 +84,13 @@ function harness() {
     forCurrency: vi.fn(() => ({ createVirtualAccount })),
   } as unknown as PartnerService;
 
-  const svc = new OnboardingService(channel, users, wallets, audit, partners, new PinService());
-  return { svc, sent, users, wallets, partners, createVirtualAccount };
+  const flows = {
+    isEnabled: vi.fn(() => false),
+    buildSetupPinFlowMessage: vi.fn(() => ({ kind: 'flow' })),
+  } as unknown as import('../channel/whatsapp-flow.service').WhatsappFlowService;
+
+  const svc = new OnboardingService(channel, flows, users, wallets, audit, partners, new PinService());
+  return { svc, sent, users, wallets, partners, createVirtualAccount, flows };
 }
 
 function msg(over: Partial<InboundMessage>): InboundMessage {
