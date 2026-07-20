@@ -110,11 +110,11 @@ export class ReceiptService {
   <!-- Main Card includes footer -->
   <rect x="40" y="40" width="680" height="${height - 80}" rx="28" fill="#ffffff"/>
   
-  <!-- Top Watermark -->
-  <image href="${LOGO_BASE64}" x="130" y="${height / 2 - 250}" width="500" height="166" preserveAspectRatio="xMidYMid meet" opacity="0.20" />
+  <!-- Main Watermark (in the recipient/reference rows area) -->
+  <image href="${LOGO_BASE64}" x="80" y="464" width="600" height="200" preserveAspectRatio="xMidYMid meet" opacity="0.12" />
 
   <!-- Footer Watermark -->
-  <image href="${LOGO_BASE64}" x="130" y="${footerY + 10}" width="500" height="166" preserveAspectRatio="xMidYMid meet" opacity="0.20" />
+  <image href="${LOGO_BASE64}" x="80" y="${footerY - 10}" width="600" height="200" preserveAspectRatio="xMidYMid meet" opacity="0.12" />
 
   <!-- header -->
   <image href="${LOGO_BASE64}" x="72" y="80" width="220" height="60" preserveAspectRatio="xMidYMid meet" />
