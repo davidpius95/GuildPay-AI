@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { FlutterwaveV4TokenService } from './flutterwave-v4-token.service';
 import type { MerchantBalance } from './partner-adapter';
 
-const DEFAULT_BASE_URL = 'https://developersandbox-api.flutterwave.com';
+const DEFAULT_BASE_URL = 'https://f4bexperience.flutterwave.com';
 
 /** Fallback issuing-bank names by NIP code, when the v4 response omits the name. */
 const V4_BANK_NAMES: Record<string, string> = {

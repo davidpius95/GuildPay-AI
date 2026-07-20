@@ -5,7 +5,7 @@ import type { Currency, NameEnquiryResult } from '@guildpay/shared';
  *
  * Capability modules never touch a provider SDK or the ledger directly; they use
  * `WalletService` (internal balances) + a PartnerAdapter (external rail):
- *   - NGN → FlutterwavePartnerAdapter (Flutterwave sandbox — test money)
+ *   - NGN → FlutterwavePartnerAdapter (Flutterwave live rail)
  *   - QAR → MockPartnerAdapter (simulated ledger)
  *
  * The AI PREPARES; only the OTP/PIN verifier calls the money-moving methods
@@ -103,7 +103,7 @@ export interface PartnerAdapter {
   /** Move money to an external bank account (NIP). OTP/PIN-gated by the caller. */
   bankTransfer(req: BankTransferRequest): Promise<TransferResult>;
 
-  /** Fund a demo/sandbox account (or detect an inbound funding event). */
+  /** Fund an account (or detect an inbound funding event). */
   fund(accountRef: string, amount: number): Promise<TransferResult>;
 
   getBalance(accountRef: string): Promise<BalanceResult>;

@@ -31,9 +31,9 @@ const DEFAULT_BASE_URL = 'https://api.flutterwave.com/v3';
 /**
  * FlutterwavePartnerAdapter — NGN rail via the Flutterwave v3 API.
  *
- * The same base URL + secret key serve sandbox (FLWSECK_TEST-…) and live
- * (FLWSECK-…); "going live" is a key swap plus enabling permanent virtual
- * accounts + BVN lookups on the account (see docs/05 §1.5/§4). Keys come from
+ * The same base URL + live secret key (FLWSECK-…) serve every request; "going
+ * live" is enabling permanent virtual accounts + BVN lookups on the account
+ * (see docs/05 §1.5/§4). Keys come from
  * env only. Money-moving methods (`bankTransfer`) are OTP/PIN-gated by the
  * caller per the `no-otp-no-money` rule.
  */

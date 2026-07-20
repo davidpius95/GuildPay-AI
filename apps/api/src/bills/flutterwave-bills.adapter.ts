@@ -14,7 +14,7 @@ const NOT_YET = 'FlutterwaveBillsAdapter not implemented yet (Week 2.5 — M6a/M
 
 /**
  * FlutterwaveBillsAdapter — NGN airtime/data/bills via the Flutterwave Bills API
- * (same FLW_* sandbox keys as the payments adapter). Week 0 contract stub.
+ * (same FLW_* keys as the payments adapter). Week 0 contract stub.
  */
 @Injectable()
 export class FlutterwaveBillsAdapter implements BillsAdapter {

@@ -16,7 +16,7 @@ import { WalletFundingService } from '../banking/wallet-funding.service';
  * number and credits it via the shared, idempotent WalletFundingService.
  *
  * NOTE: the exact v4 credit event name and payload shape must be confirmed against
- * Flutterwave (sandbox/live) — extraction below is deliberately tolerant of field
+ * Flutterwave (live) — extraction below is deliberately tolerant of field
  * placement; unmatched or unrecognised events are logged/audited, never guessed.
  */
 @Controller('webhooks/flutterwave/v4')
