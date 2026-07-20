@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FlutterwavePartnerAdapter } from '../partner/flutterwave-partner.adapter';
+import { FlutterwaveV4Client } from '../partner/flutterwave-v4.client';
 import type { Bank, Dispute, ListPage, MerchantBalance, Settlement } from '../partner/partner-adapter';
 import type { NameEnquiryResult } from '@guildpay/shared';
 
@@ -13,9 +15,28 @@ import type { NameEnquiryResult } from '@guildpay/shared';
 export class OpsService {
   private readonly logger = new Logger(OpsService.name);
 
-  constructor(private readonly flw: FlutterwavePartnerAdapter) {}
+  constructor(
+    private readonly flw: FlutterwavePartnerAdapter,
+    private readonly v4: FlutterwaveV4Client,
+    private readonly config: ConfigService,
+  ) {}
 
-  getBalances(): Promise<MerchantBalance[]> {
+  /** True when v4 credentials are configured (merchant balance can use v4). */
+  private v4Enabled(): boolean {
+    return Boolean(
+      this.config.get<string>('FLW_V4_CLIENT_ID') && this.config.get<string>('FLW_V4_CLIENT_SECRET'),
+    );
+  }
+
+  /** Merchant float for the dashboard — from v4 when configured, else v3. */
+  async getBalances(): Promise<MerchantBalance[]> {
+    if (this.v4Enabled()) {
+      try {
+        return await this.v4.getMerchantBalances();
+      } catch (err) {
+        this.logger.warn(`v4 balances failed, falling back to v3: ${(err as Error).message}`);
+      }
+    }
     return this.flw.getBalances();
   }
 

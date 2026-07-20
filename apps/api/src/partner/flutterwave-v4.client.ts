@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FlutterwaveV4TokenService } from './flutterwave-v4-token.service';
+import type { MerchantBalance } from './partner-adapter';
 
 const DEFAULT_BASE_URL = 'https://developersandbox-api.flutterwave.com';
 
@@ -102,6 +103,22 @@ export class FlutterwaveV4Client {
       bankName: data.account_bank_name ?? data.bank_name ?? V4_BANK_NAMES[req.bankCode] ?? '',
       providerRef: data.id ?? data.reference ?? req.reference,
     };
+  }
+
+  /**
+   * Merchant wallet balances (float) for the admin dashboard. Read-only. v4 returns
+   * one row per currency with an available balance; we map to the neutral
+   * MerchantBalance shape the dashboard already renders.
+   */
+  async getMerchantBalances(): Promise<MerchantBalance[]> {
+    const data = await this.request<
+      Array<{ currency?: string; available_balance?: number; ledger_balance?: number }>
+    >('GET', '/wallets/balances', undefined, randomUUID());
+    return (data ?? []).map((w) => ({
+      currency: w.currency ?? '',
+      availableBalance: Number(w.available_balance ?? 0),
+      ledgerBalance: Number(w.ledger_balance ?? w.available_balance ?? 0),
+    }));
   }
 
   private async request<T>(

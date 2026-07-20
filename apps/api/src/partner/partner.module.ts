@@ -13,6 +13,6 @@ import { FlutterwaveV4Client } from './flutterwave-v4.client';
     FlutterwaveV4TokenService,
     FlutterwaveV4Client,
   ],
-  exports: [PartnerService, FlutterwavePartnerAdapter],
+  exports: [PartnerService, FlutterwavePartnerAdapter, FlutterwaveV4Client],
 })
 export class PartnerModule {}
