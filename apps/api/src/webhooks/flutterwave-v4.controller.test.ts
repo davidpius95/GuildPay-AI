@@ -33,7 +33,10 @@ function harness(over: { duplicate?: boolean; wallet?: unknown } = {}) {
 
   const controller = new FlutterwaveV4Controller(
     { get: vi.fn(() => SECRET) } as unknown as ConfigService,
-    { findByVirtualAccountNumber: vi.fn(async () => wallet) } as unknown as WalletsRepository,
+    {
+      findByReference: vi.fn(async () => wallet),
+      findByVirtualAccountNumber: vi.fn(async () => null),
+    } as unknown as WalletsRepository,
     audit,
     funding,
   );
@@ -41,13 +44,14 @@ function harness(over: { duplicate?: boolean; wallet?: unknown } = {}) {
 }
 
 const creditEvent = {
-  type: 'virtualaccount.credited',
-  data: { id: 'chg_1', status: 'succeeded', amount: 7000, currency: 'NGN', account_number: '9911223344' },
+  type: 'charge.completed',
+  data: { id: 'chg_1', status: 'succeeded', amount: 7000, currency: 'NGN', reference: 'GPA-NG-XYZ' },
 };
 
 function signedReq(body: unknown, sig?: string): { rawBody: Buffer; headers: Record<string, string> } {
   const rawBody = Buffer.from(JSON.stringify(body));
-  const signature = sig ?? createHmac('sha256', SECRET).update(rawBody).digest('hex');
+  // v4 sends the HMAC base64-encoded (via Svix) — mirror that here.
+  const signature = sig ?? createHmac('sha256', SECRET).update(rawBody).digest('base64');
   return { rawBody, headers: { 'flutterwave-signature': signature } };
 }
 
@@ -64,7 +68,7 @@ describe('FlutterwaveV4Controller — funding', () => {
     expect(h.controller.receive(req as never, creditEvent)).toEqual({ status: 'ok' });
   });
 
-  it('credits the wallet matched by account number, once', async () => {
+  it('credits the wallet matched by reference, once', async () => {
     const h = harness();
     await h.controller['process'](creditEvent);
     expect(h.credit).toHaveBeenCalledWith('w1', 7000, 'txn9', 'Wallet Funding via Flutterwave', 'chg_1');

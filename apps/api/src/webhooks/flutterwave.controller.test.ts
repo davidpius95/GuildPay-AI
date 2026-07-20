@@ -48,6 +48,7 @@ function harness(over: { duplicate?: boolean; status?: string; wallet?: unknown 
     audit,
     walletSvc,
     funding,
+    { render: vi.fn(() => Buffer.from('')) } as unknown as import('../banking/receipt.service').ReceiptService,
   );
 
   return { controller, credit, create, send, record, verifyTransaction };

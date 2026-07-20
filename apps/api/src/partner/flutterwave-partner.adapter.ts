@@ -112,6 +112,7 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
       customerId: customer.id,
       bvn: req.bvn,
       bankCode,
+      narration: [req.firstName, req.lastName].filter(Boolean).join(' ') || req.userRef,
     });
     return {
       accountNumber: va.accountNumber,

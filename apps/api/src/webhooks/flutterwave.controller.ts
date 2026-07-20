@@ -20,6 +20,8 @@ import { UsersRepository } from '../database/users.repository';
 import { AuditRepository } from '../database/audit.repository';
 import { WalletService } from '../banking/wallet.service';
 import { WalletFundingService } from '../banking/wallet-funding.service';
+import { ReceiptService } from '../banking/receipt.service';
+import type { TransactionRow } from '../database/transactions.repository';
 import { formatMoney } from '../banking/money';
 
 /** Fields we read from a Flutterwave webhook envelope. */
@@ -61,6 +63,7 @@ export class FlutterwaveController {
     private readonly audit: AuditRepository,
     private readonly wallet: WalletService,
     private readonly funding: WalletFundingService,
+    private readonly receipts: ReceiptService,
   ) {}
 
   @Post()
@@ -158,7 +161,12 @@ export class FlutterwaveController {
     }
     const status = (data.status ?? '').toUpperCase();
     if (status === 'SUCCESSFUL') {
-      if (txn.status !== 'completed') await this.txns.setStatus(txn.id, 'completed');
+      // Only notify once (webhooks retry): act just as it transitions to completed.
+      if (txn.status !== 'completed') {
+        await this.txns.setStatus(txn.id, 'completed');
+        const providerId = data.id != null ? String(data.id) : undefined;
+        await this.notifyTransferSuccess(txn, providerId, data.flw_ref ?? undefined);
+      }
       this.logger.log(`transfer ${txn.id} confirmed successful`);
       return;
     }
@@ -185,6 +193,67 @@ export class FlutterwaveController {
       });
     }
     this.logger.log(`transfer ${txn.id} failed — reversed ${amount}`);
+  }
+
+  /**
+   * A NIP payout is asynchronous — the user first sees "processing". When the
+   * transfer.completed webhook confirms success, upgrade them to a clear
+   * "successful" message and a COMPLETED receipt (so they never stay on
+   * "processing"). Best-effort; the money has already moved.
+   */
+  private async notifyTransferSuccess(
+    txn: TransactionRow,
+    providerId?: string,
+    providerRef?: string,
+  ): Promise<void> {
+    try {
+      const wallet = await this.wallets.findById(txn.wallet_id);
+      const user = wallet ? await this.users.findById(wallet.user_id) : null;
+      if (!wallet || !user) return;
+      const cur = wallet.currency as Currency;
+      const amount = Number(txn.amount);
+
+      await this.channel.send({
+        to: user.wa_phone,
+        kind: 'text',
+        body:
+          `✅ *Transfer successful*\n\n` +
+          `Amount: ${formatMoney(cur, amount)}\n` +
+          `To: ${txn.recipient_name}\n` +
+          `Account: ${txn.recipient_ref}\n` +
+          `Ref: ${providerRef ?? txn.id.slice(0, 8).toUpperCase()}`,
+      });
+
+      let bankName: string | undefined;
+      if (txn.bank_code) {
+        try {
+          const banks = await this.flw.listBanks();
+          bankName = banks.find((b) => b.code === txn.bank_code)?.name;
+        } catch {
+          /* bank name is optional on the receipt */
+        }
+      }
+      const png = this.receipts.render({
+        status: 'COMPLETED',
+        currency: cur,
+        amount,
+        sender: user.full_name ?? 'GuildPay user',
+        recipient: txn.recipient_name ?? txn.recipient_ref ?? '—',
+        bank: bankName,
+        account: txn.recipient_ref ?? undefined,
+        reference: txn.id.slice(0, 8).toUpperCase(),
+        providerRef,
+        providerId,
+      });
+      await this.channel.send({
+        to: user.wa_phone,
+        kind: 'image',
+        image: png,
+        caption: `Transfer complete — ${formatMoney(cur, amount)}`,
+      });
+    } catch (err) {
+      this.logger.warn(`transfer success notify failed for ${txn.id}: ${(err as Error).message}`);
+    }
   }
 
   /** Record a chargeback/dispute event for the admin Disputes view + reconciliation. */

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { Resvg } from '@resvg/resvg-js';
 import type { Currency } from '@guildpay/shared';
 import { formatMoney } from './money';
+import { LOGO_BASE64 } from './logo';
 
 export interface ReceiptData {
   status: 'COMPLETED' | 'PROCESSING';
@@ -101,14 +102,22 @@ export class ReceiptService {
       .join('');
 
     const footerY = y + 40;
-    const height = footerY + 174; // footer block (140) + bottom margin (40)
+    const height = footerY + 160; // footer block (160) + bottom margin
 
     return `<svg width="760" height="${height}" viewBox="0 0 760 ${height}" xmlns="http://www.w3.org/2000/svg">
   <rect width="760" height="${height}" fill="${BG}"/>
-  <rect x="40" y="40" width="680" height="${footerY - 62}" rx="28" fill="#ffffff"/>
+  
+  <!-- Main Card includes footer -->
+  <rect x="40" y="40" width="680" height="${height - 80}" rx="28" fill="#ffffff"/>
+  
+  <!-- Top Watermark -->
+  <image href="${LOGO_BASE64}" x="130" y="${height / 2 - 250}" width="500" height="166" preserveAspectRatio="xMidYMid meet" opacity="0.20" />
+
+  <!-- Footer Watermark -->
+  <image href="${LOGO_BASE64}" x="130" y="${footerY + 10}" width="500" height="166" preserveAspectRatio="xMidYMid meet" opacity="0.20" />
 
   <!-- header -->
-  <text x="72" y="118" font-family="${FONT}" font-weight="800" font-size="34" fill="${INK}">Guild<tspan fill="${GREEN}">Pay</tspan> AI</text>
+  <image href="${LOGO_BASE64}" x="72" y="80" width="220" height="60" preserveAspectRatio="xMidYMid meet" />
   <rect x="512" y="88" width="176" height="42" rx="21" fill="${statusColor}"/>
   <text x="600" y="116" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="18" fill="#ffffff">${d.status}</text>
 
@@ -123,10 +132,10 @@ export class ReceiptService {
   ${rowSvg}
 
   <!-- footer -->
-  <rect x="40" y="${footerY - 6}" width="680" height="140" rx="28" fill="#0b141a"/>
-  <text x="380" y="${footerY + 40}" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="22" fill="#ffffff">Guild<tspan fill="${GREEN}">Pay</tspan> AI</text>
-  <text x="380" y="${footerY + 72}" text-anchor="middle" font-family="${FONT}" font-size="18" fill="#8696a0">Everyday money, made conversational.</text>
-  <text x="380" y="${footerY + 100}" text-anchor="middle" font-family="${FONT}" font-size="15" fill="#5a6b74">Send money, buy airtime &amp; pay bills — just by chatting.</text>
+  <line x1="72" y1="${footerY}" x2="688" y2="${footerY}" stroke="${LINE}" stroke-width="2" stroke-dasharray="6 6"/>
+  <image href="${LOGO_BASE64}" x="280" y="${footerY + 24}" width="200" height="40" preserveAspectRatio="xMidYMid meet" />
+  <text x="380" y="${footerY + 90}" text-anchor="middle" font-family="${FONT}" font-size="16" font-weight="700" fill="${GREEN_DEEP}">guildpay.ai</text>
+  <text x="380" y="${footerY + 116}" text-anchor="middle" font-family="${FONT}" font-size="14" fill="${MUTED}">Generated on ${esc(when)}</text>
 </svg>`;
   }
 }
@@ -142,6 +151,10 @@ function clip(s: string, max: number): string {
 function fmtDate(d: Date): string {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const p = (n: number) => String(n).padStart(2, '0');
-  return `on ${p(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  let h = d.getHours();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  h = h ? h : 12;
+  return `${months[d.getMonth()]} ${p(d.getDate())}, ${d.getFullYear()} at ${p(h)}:${p(d.getMinutes())} ${ampm}`;
 }
 

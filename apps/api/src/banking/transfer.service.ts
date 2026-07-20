@@ -78,18 +78,22 @@ export class TransferService {
     });
   }
 
-  /** Step 2 — user tapped Confirm: ask for the transaction PIN (via secure Flow when available). */
+  /** Step 2 — Confirm: ask for the transaction PIN (via secure Flow when available). */
   async confirm(user: UserRow, txn: TransactionRow): Promise<void> {
     await this.txns.setStatus(txn.id, 'pending_otp'); // status name kept for schema compat; gate is the PIN
-    // Returning users with a PIN get the encrypted WhatsApp Flow modal so the PIN
-    // never lands in chat. First-time set / non-Meta channels fall back to chat.
-    if (user.pin_hash && this.channel.name === 'meta' && this.flows.isEnabled()) {
+    // The WhatsApp Flow modal keeps the PIN secure so it never lands in chat.
+    // First-time PIN set and non-Meta channels fall back to the chat prompt.
+    if (this.channel.name === 'meta' && this.flows.isEnabled()) {
       const cur = txn.currency as Currency;
+      const isSetup = !user.pin_hash;
       await this.channel.send(
         this.flows.buildPinFlowMessage(
           user.wa_phone,
           txn.id,
-          `🔐 Approve your transfer of *${formatMoney(cur, txn.amount)}* to ${txn.recipient_name}.\nTap *Verify Transaction* to enter your PIN securely.`,
+          isSetup
+            ? `🔐 You don't have a transaction PIN yet.\nTap *Set PIN* to securely set your 4-digit PIN.`
+            : `🔐 Approve your transfer of *${formatMoney(cur, txn.amount)}* to ${txn.recipient_name}.\nTap *Verify Transaction* to enter your PIN securely.`,
+          isSetup ? 'Set PIN' : 'Verify Transaction',
         ),
       );
       return;
@@ -155,6 +159,7 @@ export class TransferService {
           recipient: txn.recipient_name ?? recipient.reference,
           account: recipient.reference,
           reference: txn.id.slice(0, 8).toUpperCase(),
+          date: new Date(txn.created_at),
         });
         await this.channel.send({
           to: user.wa_phone,
@@ -205,9 +210,11 @@ export class TransferService {
       return false;
     }
     if (!user.pin_hash) {
-      await this.users.update(user.id, { pin_hash: this.pins.hash(pin) });
+      const pinHash = this.pins.hash(pin);
+      await this.users.update(user.id, { pin_hash: pinHash });
       await this.audit.record({ userId: user.id, actor: 'user', action: 'pin_set', entity: 'user', entityId: user.id });
-      await this.send(user, '✅ PIN saved.\n\n🔐 Now enter your PIN to approve the transfer.');
+      await this.send(user, '✅ PIN saved.');
+      await this.confirm({ ...user, pin_hash: pinHash }, txn);
       return false; // must enter it again — setting a PIN never approves money
     }
     if (!this.pins.verify(pin, user.pin_hash)) {

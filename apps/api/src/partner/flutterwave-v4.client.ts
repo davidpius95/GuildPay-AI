@@ -24,6 +24,8 @@ export interface V4CreateVirtualAccount {
   customerId: string;
   bvn?: string;
   bankCode: string;
+  /** Display name shown when the account is resolved (so senders see the user). */
+  narration?: string;
 }
 
 export interface V4VirtualAccountResult {
@@ -88,6 +90,7 @@ export class FlutterwaveV4Client {
         account_type: 'static',
         bvn: req.bvn,
         bank_code: req.bankCode,
+        narration: req.narration,
       },
       req.reference,
     );

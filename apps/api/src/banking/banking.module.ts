@@ -40,6 +40,6 @@ import { MessageRouter } from './message-router.service';
     WalletFundingService,
     MessageRouter,
   ],
-  exports: [MessageRouter, WalletService, OtpService, WalletFundingService],
+  exports: [MessageRouter, WalletService, OtpService, WalletFundingService, ReceiptService],
 })
 export class BankingModule {}

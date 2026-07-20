@@ -64,7 +64,7 @@ export class WhatsappFlowService {
   }
 
   /** Build the outbound PIN Flow message for a pending transaction. */
-  buildPinFlowMessage(to: string, txnId: string, body: string): OutboundFlow {
+  buildPinFlowMessage(to: string, txnId: string, body: string, buttonTitle: string = 'Verify Transaction'): OutboundFlow {
     const mode = this.config.get<string>('WHATSAPP_FLOW_MODE') === 'draft' ? 'draft' : 'published';
     return {
       to,
@@ -73,7 +73,7 @@ export class WhatsappFlowService {
       flowId: this.config.get<string>('WHATSAPP_PIN_FLOW_ID') ?? '',
       flowToken: this.signFlowToken(txnId),
       screenId: PIN_SCREEN,
-      buttonTitle: 'Verify Transaction',
+      buttonTitle,
       mode,
     };
   }
