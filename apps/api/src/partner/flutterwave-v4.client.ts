@@ -5,6 +5,12 @@ import { FlutterwaveV4TokenService } from './flutterwave-v4-token.service';
 
 const DEFAULT_BASE_URL = 'https://developersandbox-api.flutterwave.com';
 
+/** Fallback issuing-bank names by NIP code, when the v4 response omits the name. */
+const V4_BANK_NAMES: Record<string, string> = {
+  '035': 'WEMA BANK',
+  '232': 'STERLING BANK',
+};
+
 export interface V4CreateCustomer {
   email: string;
   firstName?: string;
@@ -67,6 +73,7 @@ export class FlutterwaveV4Client {
   async createVirtualAccount(req: V4CreateVirtualAccount): Promise<V4VirtualAccountResult> {
     const data = await this.request<{
       account_number?: string;
+      account_bank_name?: string; // v4's field for the issuing bank name
       bank_name?: string;
       id?: string;
       reference?: string;
@@ -87,7 +94,9 @@ export class FlutterwaveV4Client {
     if (!data.account_number) throw new Error('FLW v4 createVirtualAccount returned no account_number');
     return {
       accountNumber: data.account_number,
-      bankName: data.bank_name ?? '',
+      // v4 returns the issuing bank as `account_bank_name`; fall back to the known
+      // name for the requested bank_code so the user always sees a bank name.
+      bankName: data.account_bank_name ?? data.bank_name ?? V4_BANK_NAMES[req.bankCode] ?? '',
       providerRef: data.id ?? data.reference ?? req.reference,
     };
   }

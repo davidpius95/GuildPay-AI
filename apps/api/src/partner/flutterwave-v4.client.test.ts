@@ -20,7 +20,7 @@ describe('FlutterwaveV4Client', () => {
       return {
         ok: true,
         status: 201,
-        json: async () => ({ data: { account_number: '9911223344', bank_name: 'WEMA BANK', id: 'va_1' } }),
+        json: async () => ({ data: { account_number: '9911223344', account_bank_name: 'WEMA BANK', id: 'va_1' } }),
       };
     }) as unknown as typeof fetch;
     const { client } = make(f);
@@ -40,6 +40,14 @@ describe('FlutterwaveV4Client', () => {
     expect(headers.Authorization).toBe('Bearer bearer-xyz');
     expect(headers['X-Idempotency-Key']).toBe('GPA-NG-ABC');
     expect(sent!.url).toBe('https://v4.test/virtual-accounts');
+  });
+
+  it('falls back to the known bank name when the response omits it', async () => {
+    const { client } = make(
+      vi.fn(async () => ({ ok: true, status: 201, json: async () => ({ data: { account_number: '9911', id: 'va_2' } }) })) as unknown as typeof fetch,
+    );
+    const res = await client.createVirtualAccount({ reference: 'r', customerId: 'c', bankCode: '035' });
+    expect(res.bankName).toBe('WEMA BANK');
   });
 
   it('creates a customer with structured name/phone objects (v4 rejects flat strings)', async () => {
