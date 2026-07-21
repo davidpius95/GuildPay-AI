@@ -14,6 +14,7 @@ export interface UserRow {
   currency: string | null;
   kyc_id: string | null;
   kyc_status: string;
+  kyc_reference: string | null;
   kyc_expiry: string | null;
   consent_at: string | null;
   pin_hash: string | null;
@@ -36,6 +37,7 @@ export type UserUpdate = Partial<
     | 'currency'
     | 'kyc_id'
     | 'kyc_status'
+    | 'kyc_reference'
     | 'pin_hash'
     | 'status'
     | 'onboarding_step'
@@ -55,6 +57,15 @@ export class UsersRepository {
 
   async findById(id: string): Promise<UserRow | null> {
     const { rows } = await this.pool.query<UserRow>('select * from public.users where id = $1', [id]);
+    return rows[0] ?? null;
+  }
+
+  /** Find the user who started an in-flight BVN consent verification, by its provider reference. */
+  async findByKycReference(reference: string): Promise<UserRow | null> {
+    const { rows } = await this.pool.query<UserRow>(
+      'select * from public.users where kyc_reference = $1 limit 1',
+      [reference],
+    );
     return rows[0] ?? null;
   }
 

@@ -8,7 +8,10 @@ import { UsersRepository, type UserRow } from '../database/users.repository';
 import { WalletsRepository } from '../database/wallets.repository';
 import { AuditRepository } from '../database/audit.repository';
 import { PartnerService } from '../partner/partner.service';
-import type { CreateVirtualAccountResult } from '../partner/partner-adapter';
+import type {
+  CreateVirtualAccountResult,
+  IdentityVerificationResult,
+} from '../partner/partner-adapter';
 import { PinService } from '../banking/pin.service';
 
 const MARKET_CURRENCY: Record<Market, Currency> = { NG: 'NGN', QA: 'QAR' };
@@ -55,6 +58,8 @@ export class OnboardingService {
         return this.stepMarket(user, msg);
       case 'kyc':
         return this.stepKyc(user, msg);
+      case 'kyc_pending':
+        return this.stepKycPending(user, msg);
       case 'pin':
         return this.stepPin(user, msg);
       case 'consent':
@@ -120,10 +125,12 @@ export class OnboardingService {
   }
 
   /**
-   * Verify the government ID with the rail BEFORE advancing. For NGN this
-   * provisions the permanent NUBAN, which makes Flutterwave validate the BVN and
-   * reject a mismatch — so a wrong/invalid BVN cannot pass this step. On failure
-   * we stay on the KYC step and re-prompt; no wallet or account number is created.
+   * KYC entry point. Validates the 11-digit ID, then branches by rail:
+   *   - NGN → start Flutterwave's BVN *consent* flow. The user approves with their
+   *     bank via a secure link; the NUBAN is provisioned only after the
+   *     `bvn.verification.completed` webhook confirms consent (see completeBvnConsent).
+   *   - QAR → resolve the (simulated) QID synchronously and provision immediately.
+   * No wallet or account number is created until identity is confirmed.
    */
   private async stepKyc(user: UserRow, msg: InboundMessage): Promise<boolean> {
     const market = (user.market ?? 'NG') as Market;
@@ -137,6 +144,168 @@ export class OnboardingService {
       return true;
     }
 
+    if (currency === 'NGN') {
+      return this.startBvnConsent(user, kyc);
+    }
+    // QAR (simulated QID) resolves synchronously on the mock rail.
+    return this.provisionWalletAndAdvance(user, market, kyc);
+  }
+
+  /**
+   * Start Flutterwave's BVN consent verification: send the user a secure link to
+   * approve with their bank, store the provider reference (to correlate the
+   * webhook) and the BVN (needed to provision the NUBAN after consent), and park
+   * the user in `kyc_pending`. The raw BVN is never logged.
+   */
+  private async startBvnConsent(user: UserRow, bvn: string): Promise<boolean> {
+    const firstName = user.first_name ?? (user.full_name ?? '').trim().split(/\s+/)[0];
+    const lastName = user.last_name ?? firstName;
+    let result: IdentityVerificationResult;
+    try {
+      result = await this.partners.forCurrency('NGN').verifyIdentity({
+        type: 'bvn',
+        idNumber: bvn,
+        firstName: firstName || undefined,
+        lastName: lastName || firstName || undefined,
+      });
+    } catch (err) {
+      this.logger.warn(`BVN consent start failed for user ${user.id}: ${(err as Error).message}`);
+      await this.text(
+        user.wa_phone,
+        "⚠️ I couldn't start BVN verification just now. Please send your 11-digit *BVN* again in a moment.",
+      );
+      return true; // stay on the kyc step
+    }
+
+    if (result.status === 'failed' || !result.consentUrl || !result.reference) {
+      await this.users.update(user.id, { kyc_status: 'failed' });
+      await this.audit.record({
+        userId: user.id,
+        action: 'kyc_failed',
+        entity: 'user',
+        entityId: user.id,
+        metadata: { type: 'bvn' },
+      });
+      await this.text(
+        user.wa_phone,
+        `❌ I couldn't verify that BVN.\n\n` +
+          `Please double-check the 11 digits and send your *BVN* again (numbers only).`,
+      );
+      return true;
+    }
+
+    await this.users.update(user.id, {
+      kyc_id: bvn,
+      kyc_status: 'pending',
+      kyc_reference: result.reference,
+      onboarding_step: 'kyc_pending',
+    });
+    await this.audit.record({
+      userId: user.id,
+      action: 'kyc_pending',
+      entity: 'user',
+      entityId: user.id,
+      metadata: { type: 'bvn', reference: result.reference }, // no raw BVN
+    });
+
+    await this.text(
+      user.wa_phone,
+      `🔐 *Verify your BVN*\n\n` +
+        `Tap the secure link below to confirm your identity with your bank. ` +
+        `It takes about a minute, and I'll set up your wallet automatically once you're done:\n\n` +
+        `${result.consentUrl}\n\n` +
+        `_Verification happens directly with your bank — GuildPay never sees your bank password or PIN._`,
+    );
+    return true;
+  }
+
+  /**
+   * The user sent a message while we're waiting for their bank to confirm BVN
+   * consent. Resending an 11-digit BVN restarts verification; anything else gets a
+   * gentle "still waiting" nudge.
+   */
+  private async stepKycPending(user: UserRow, msg: InboundMessage): Promise<boolean> {
+    const market = (user.market ?? 'NG') as Market;
+    const digits = (msg.text ?? '').replace(/\s/g, '');
+    if (/^\d{11}$/.test(digits)) {
+      return this.startBvnConsent(user, digits);
+    }
+    await this.text(
+      user.wa_phone,
+      `⏳ I'm still waiting for your *BVN* verification to complete with your bank.\n\n` +
+        `Please finish the secure link I sent — I'll set up your wallet automatically once it's done. ` +
+        `To start over, send your 11-digit *${KYC_LABEL[market]}* again.`,
+    );
+    return true;
+  }
+
+  /**
+   * Called from the Flutterwave webhook when a BVN consent verification completes.
+   * `result` is the authoritative status re-read from Flutterwave (never the raw
+   * webhook body). On success we provision the NUBAN and advance to the PIN step;
+   * on failure the user drops back to the KYC step to retry. Idempotent: only acts
+   * while the user is still in `kyc_pending`.
+   */
+  async completeBvnConsent(reference: string, result: IdentityVerificationResult): Promise<void> {
+    const user = await this.users.findByKycReference(reference);
+    if (!user) {
+      this.logger.warn(`BVN consent webhook: no user for reference ${reference}`);
+      return;
+    }
+    if (user.onboarding_step !== 'kyc_pending') {
+      this.logger.log(
+        `BVN consent webhook: user ${user.id} not awaiting consent (step=${user.onboarding_step}) — ignored`,
+      );
+      return; // already processed or the user moved on
+    }
+    const market = (user.market ?? 'NG') as Market;
+
+    if (result.status !== 'verified') {
+      await this.users.update(user.id, {
+        kyc_status: 'failed',
+        kyc_reference: null,
+        onboarding_step: 'kyc',
+      });
+      await this.audit.record({
+        userId: user.id,
+        action: 'kyc_failed',
+        entity: 'user',
+        entityId: user.id,
+        metadata: { type: 'bvn', reference },
+      });
+      await this.text(
+        user.wa_phone,
+        `❌ Your BVN verification didn't go through.\n\n` +
+          `Please send your 11-digit *BVN* again (numbers only) to try once more.`,
+      );
+      return;
+    }
+
+    const bvn = user.kyc_id;
+    if (!bvn) {
+      // We stored the BVN when starting consent, so this shouldn't happen.
+      await this.users.update(user.id, { kyc_reference: null, onboarding_step: 'kyc' });
+      await this.text(
+        user.wa_phone,
+        `Let's try that again — please send your 11-digit *${KYC_LABEL[market]}* (numbers only).`,
+      );
+      return;
+    }
+    await this.users.update(user.id, { kyc_reference: null });
+    await this.provisionWalletAndAdvance(user, market, bvn);
+  }
+
+  /**
+   * Provision the wallet + funding account for a verified identity and advance to
+   * the PIN step. Shared by the QAR synchronous path and the NGN post-consent
+   * webhook. Never logs/audits the full account number or ID.
+   */
+  private async provisionWalletAndAdvance(
+    user: UserRow,
+    market: Market,
+    kyc: string,
+  ): Promise<boolean> {
+    const currency = MARKET_CURRENCY[market];
     const firstName = user.first_name ?? (user.full_name ?? '').trim().split(/\s+/)[0];
     const lastName = user.last_name ?? firstName;
     const reference = `GPA-${market}-${randomBytes(3).toString('hex').toUpperCase()}`;
@@ -151,9 +320,8 @@ export class OnboardingService {
         bvn: kyc,
       });
     } catch (err) {
-      // Rail rejected the ID (e.g. BVN mismatch). Never log the raw ID.
-      this.logger.warn(`KYC verification failed for user ${user.id}: ${(err as Error).message}`);
-      await this.users.update(user.id, { kyc_status: 'failed' });
+      this.logger.warn(`Account provisioning failed for user ${user.id}: ${(err as Error).message}`);
+      await this.users.update(user.id, { kyc_status: 'failed', onboarding_step: 'kyc' });
       await this.audit.record({
         userId: user.id,
         action: 'kyc_failed',
@@ -163,13 +331,11 @@ export class OnboardingService {
       });
       await this.text(
         user.wa_phone,
-        `❌ I couldn't verify that ${KYC_LABEL[market]} with your bank.\n\n` +
-          `Please double-check the 11 digits and send your *${KYC_LABEL[market]}* again (numbers only).`,
+        `❌ I couldn't finish setting up your account. Please send your *${KYC_LABEL[market]}* again (numbers only).`,
       );
-      return true; // stay on the KYC step — do not advance
+      return true;
     }
 
-    // Verified → create the wallet and attach its funding account now.
     const wallet = await this.wallets.create({ userId: user.id, reference, currency, market });
     await this.wallets.setVirtualAccount(
       wallet.id,
@@ -178,7 +344,6 @@ export class OnboardingService {
       account.providerRef,
     );
     await this.users.update(user.id, { kyc_id: kyc, kyc_status: 'verified', onboarding_step: 'pin' });
-    // Never log/audit the full account number or BVN.
     await this.audit.record({
       userId: user.id,
       action: 'wallet_created',
@@ -193,14 +358,19 @@ export class OnboardingService {
       entityId: wallet.id,
       metadata: { bank: account.bankName },
     });
+    await this.sendPinPrompt(user, market);
+    return true;
+  }
 
+  /** Prompt the user to set their 4-digit PIN — via the secure WhatsApp Flow when available, else chat. */
+  private async sendPinPrompt(user: UserRow, market: Market): Promise<void> {
     if (this.channel.name === 'meta' && this.flows.isEnabled()) {
       await this.channel.send(
         this.flows.buildSetupPinFlowMessage(
           user.wa_phone,
           user.id,
-          `✅ ${KYC_LABEL[market]} verified.\n\n🔐 Now set your *4-digit transaction PIN*.\nTap *Set PIN* to enter it securely.`
-        )
+          `✅ ${KYC_LABEL[market]} verified.\n\n🔐 Now set your *4-digit transaction PIN*.\nTap *Set PIN* to enter it securely.`,
+        ),
       );
     } else {
       await this.text(
@@ -211,7 +381,6 @@ export class OnboardingService {
           'You can delete your message after I confirm it.',
       );
     }
-    return true;
   }
 
   /** Set the 4-digit transaction PIN via chat fallback (hashed; the raw PIN is never stored or logged). */
