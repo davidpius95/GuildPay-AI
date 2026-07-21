@@ -61,15 +61,52 @@ export class FlutterwaveV4Client {
     const name =
       req.firstName || req.lastName ? { first: req.firstName, last: req.lastName } : undefined;
     const phone = req.phone ? splitPhone(req.phone) : undefined;
-    const data = await this.request<{ id?: string; customer_id?: string }>(
-      'POST',
-      '/customers',
-      { email: req.email, name, phone },
-      idempotencyKey,
-    );
-    const id = data.id ?? data.customer_id;
-    if (!id) throw new Error('FLW v4 createCustomer returned no id');
-    return { id };
+    try {
+      const data = await this.request<{ id?: string; customer_id?: string }>(
+        'POST',
+        '/customers',
+        { email: req.email, name, phone },
+        idempotencyKey,
+      );
+      const id = data.id ?? data.customer_id;
+      if (!id) throw new Error('FLW v4 createCustomer returned no id');
+      return { id };
+    } catch (err) {
+      // A repeat onboarding hits the same email — Flutterwave enforces one customer
+      // per email and returns 409 "Customer already exists". That must NOT fail
+      // onboarding: recover the existing customer id (from the 409 body, else by
+      // email lookup) and carry on to create the virtual account.
+      if (err instanceof FlwV4Error && err.status === 409) {
+        const existing = extractCustomerId(err.body) ?? (await this.findCustomerIdByEmail(req.email));
+        if (existing) {
+          this.logger.log('FLW v4 customer already existed — reusing existing customer id');
+          return { id: existing };
+        }
+        this.logger.warn(`FLW v4 customer 409 but could not recover id; body=${safeJson(err.body)}`);
+      }
+      throw err;
+    }
+  }
+
+  /** Find an existing customer's id by email (used to recover from a 409 on create). */
+  private async findCustomerIdByEmail(email: string): Promise<string | undefined> {
+    try {
+      const data = await this.request<unknown>(
+        'GET',
+        `/customers?email=${encodeURIComponent(email)}`,
+        undefined,
+        randomUUID(),
+      );
+      const list: Array<Record<string, unknown>> = Array.isArray(data)
+        ? (data as Array<Record<string, unknown>>)
+        : (((data as { data?: unknown })?.data as Array<Record<string, unknown>>) ?? []);
+      const match =
+        list.find((c) => String(c.email ?? '').toLowerCase() === email.toLowerCase()) ?? list[0];
+      return match ? extractCustomerId(match) : undefined;
+    } catch (e) {
+      this.logger.warn(`FLW v4 customer email lookup failed: ${(e as Error).message}`);
+      return undefined;
+    }
   }
 
   /** Create a static NGN virtual account on the given bank_code, for a customer. */
@@ -160,16 +197,47 @@ export class FlutterwaveV4Client {
       // Never log the request body — it may carry BVN / account numbers.
       const msg = json.message ?? json.error?.message ?? res.statusText;
       this.logger.warn(`FLW v4 ${method} ${path} -> ${res.status} ${msg}`);
-      throw new Error(`FLW v4 ${method} ${path} failed: ${msg}`);
+      throw new FlwV4Error(`FLW v4 ${method} ${path} failed: ${msg}`, res.status, json);
     }
     // v4 responses may or may not wrap the payload in { data }.
     return (json.data ?? (json as unknown)) as T;
   }
 }
 
+/** Error from the v4 API that keeps the HTTP status + parsed body so callers can recover (e.g. 409). */
+class FlwV4Error extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body: unknown,
+  ) {
+    super(message);
+    this.name = 'FlwV4Error';
+  }
+}
+
 /** Drop undefined keys so optional fields (bvn, phone) aren't sent as null. */
 function pruneUndefined(obj: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+}
+
+/** Pull a customer id out of a v4 payload/error body, tolerant of where it sits. */
+function extractCustomerId(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const b = body as Record<string, unknown>;
+  const data = (b.data ?? b.meta ?? b.error) as Record<string, unknown> | undefined;
+  const candidate =
+    b.id ?? b.customer_id ?? data?.id ?? data?.customer_id ?? data?.customerId;
+  return typeof candidate === 'string' && candidate ? candidate : undefined;
+}
+
+/** Stringify an error body for logs without throwing on circular refs. */
+function safeJson(v: unknown): string {
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
 }
 
 /** Split an E.164-ish phone into v4's {country_code, number} (NG: 10-digit number). */
