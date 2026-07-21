@@ -21,6 +21,7 @@ import { AuditRepository } from '../database/audit.repository';
 import { WalletService } from '../banking/wallet.service';
 import { WalletFundingService } from '../banking/wallet-funding.service';
 import { ReceiptService } from '../banking/receipt.service';
+import { OnboardingService } from '../onboarding/onboarding.service';
 import type { TransactionRow } from '../database/transactions.repository';
 import { formatMoney } from '../banking/money';
 
@@ -64,6 +65,7 @@ export class FlutterwaveController {
     private readonly wallet: WalletService,
     private readonly funding: WalletFundingService,
     private readonly receipts: ReceiptService,
+    private readonly onboarding: OnboardingService,
   ) {}
 
   @Post()
@@ -88,7 +90,7 @@ export class FlutterwaveController {
           await this.handleTransferCompleted(body.data ?? {});
           break;
         case 'bvn.verification.completed':
-          this.logger.log(`bvn.verification.completed status=${body.data?.status}`);
+          await this.handleBvnVerificationCompleted(body.data ?? {});
           break;
         default:
           // Chargeback/dispute notifications: FLW uses a few event names — record
@@ -148,6 +150,29 @@ export class FlutterwaveController {
       providerRef: flwRef,
       source: 'bank_transfer',
     });
+  }
+
+  /**
+   * A user's BVN consent verification finished. Never trust the webhook body's
+   * status — re-read the authoritative result from Flutterwave by reference, then
+   * let onboarding provision the NUBAN (on success) or re-prompt (on failure).
+   */
+  private async handleBvnVerificationCompleted(data: NonNullable<FlwWebhook['data']>): Promise<void> {
+    const reference = (data.reference ?? (data.id != null ? String(data.id) : '')).trim();
+    if (!reference) {
+      this.logger.warn('bvn.verification.completed with no reference — ignored');
+      return;
+    }
+    let result;
+    try {
+      result = await this.flw.fetchBvnVerification(reference);
+    } catch (err) {
+      // If we can't confirm at source, don't guess — leave the user in kyc_pending
+      // so a retry / redelivery can still complete them.
+      this.logger.error(`fetchBvnVerification(${reference}) failed: ${(err as Error).message}`);
+      return;
+    }
+    await this.onboarding.completeBvnConsent(reference, result);
   }
 
   /** Reconcile a NIP payout: confirm on success, reverse the debit on failure (idempotent). */

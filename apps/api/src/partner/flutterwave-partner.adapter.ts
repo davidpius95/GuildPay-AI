@@ -19,11 +19,13 @@ import type {
 } from './partner-adapter';
 import { FlutterwaveV4Client } from './flutterwave-v4.client';
 
-/** Flutterwave v3 wraps every response in { status, message, data }. */
+/** Flutterwave v3 wraps every response in { status, message, data } (+ optional meta). */
 interface FlwEnvelope<T> {
   status: 'success' | 'error';
   message: string;
   data: T;
+  /** Some flows (e.g. BVN consent) return the redirect under meta.authorization. */
+  meta?: { authorization?: { redirect?: string; mode?: string } };
 }
 
 const DEFAULT_BASE_URL = 'https://api.flutterwave.com/v3';
@@ -105,7 +107,9 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
         lastName: req.lastName,
         phone: req.phone,
       },
-      `cust:${req.userRef}`,
+      // Use the email for customer idempotency so retries (with a new random
+      // wallet userRef) don't fail with "Customer already exists".
+      `cust:${req.email ?? req.userRef}`,
     );
     const va = await this.v4.createVirtualAccount({
       reference: req.userRef,
@@ -138,16 +142,25 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
 
   /**
    * Verify a government ID (BVN/NIN). Read-only KYC check — never moves money.
-   * BVN uses Flutterwave's consent flow (`POST /bvn/verifications`): it returns a
-   * URL the user completes, and the final result arrives via the
-   * `bvn.verification.completed` webhook — so status here is `pending`. NIN uses
-   * the identity lookup (`GET /kyc/nin/:nin`) which resolves synchronously.
+   *
+   * BVN uses Flutterwave's consent flow (`POST /bvn/verifications`): Flutterwave
+   * returns a `reference` plus a consent URL the user completes with their bank,
+   * and the authoritative result arrives later on the `bvn.verification.completed`
+   * webhook — so status here is always `pending`. The consent URL is required for
+   * this flow, so a bare "verified" with no URL is treated as an error rather than
+   * silently passing. NIN uses the synchronous identity lookup (`GET /kyc/nin/:nin`).
+   *
    * The raw ID never appears in a log line or the returned message.
    */
   async verifyIdentity(req: IdentityVerificationRequest): Promise<IdentityVerificationResult> {
     if (req.type === 'bvn') {
       const redirectUrl = req.redirectUrl ?? this.config.get<string>('FLW_BVN_REDIRECT_URL');
-      const data = await this.flw<{ reference?: string; url?: string; status?: string }>(
+      if (!redirectUrl) {
+        // Without a return URL the consent flow cannot complete — fail loudly
+        // instead of starting a verification the user can never finish.
+        throw new Error('FLW_BVN_REDIRECT_URL is not set — required for the BVN consent flow');
+      }
+      const env = await this.flwEnvelope<{ reference?: string; url?: string; status?: string }>(
         'POST',
         '/bvn/verifications',
         {
@@ -157,13 +170,18 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
           redirect_url: redirectUrl,
         },
       );
+      // Flutterwave returns the consent link either in data.url or meta.authorization.redirect.
+      const consentUrl = env.data.url ?? env.meta?.authorization?.redirect;
+      const reference = env.data.reference;
+      if (!consentUrl || !reference) {
+        throw new Error('Flutterwave BVN verification did not return a consent reference/URL');
+      }
       return {
         type: 'bvn',
-        // A consent URL means the user must still approve → pending.
-        status: data.url ? 'pending' : mapKycStatus(data.status),
-        reference: data.reference,
-        consentUrl: data.url,
-        message: data.url ? 'Awaiting BVN consent' : undefined,
+        status: 'pending', // user must still approve with their bank
+        reference,
+        consentUrl,
+        message: 'Awaiting BVN consent',
       };
     }
 
@@ -175,6 +193,32 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
     }>('GET', `/kyc/nin/${encodeURIComponent(req.idNumber)}`);
     const name = [data.first_name, data.last_name].filter(Boolean).join(' ') || undefined;
     return { type: 'nin', status: mapKycStatus(data.status), name };
+  }
+
+  /**
+   * Fetch the authoritative result of a BVN consent verification by its reference
+   * (`GET /bvn/verifications/:reference`). Used when the `bvn.verification.completed`
+   * webhook fires: we never trust the webhook body's status, we re-read at source —
+   * the same safe-by-construction pattern as inbound-funding verification.
+   * The raw BVN is never logged; only the resolved name (used to cross-check) is returned.
+   */
+  async fetchBvnVerification(reference: string): Promise<IdentityVerificationResult> {
+    const data = await this.flw<{
+      reference?: string;
+      status?: string;
+      bvn_data?: { first_name?: string; last_name?: string };
+      first_name?: string;
+      last_name?: string;
+    }>('GET', `/bvn/verifications/${encodeURIComponent(reference)}`);
+    const first = data.bvn_data?.first_name ?? data.first_name;
+    const last = data.bvn_data?.last_name ?? data.last_name;
+    const name = [first, last].filter(Boolean).join(' ') || undefined;
+    return {
+      type: 'bvn',
+      status: mapKycStatus(data.status),
+      reference: data.reference ?? reference,
+      name,
+    };
   }
 
   /** Send money to an external bank (NIP). Final status arrives via the transfer.completed webhook. */
@@ -266,6 +310,15 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
   }
 
   private async flw<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+    return (await this.flwEnvelope<T>(method, path, body)).data;
+  }
+
+  /** As `flw`, but returns the full envelope so callers can read `meta` (e.g. the BVN consent redirect). */
+  private async flwEnvelope<T>(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+  ): Promise<FlwEnvelope<T>> {
     const key = this.config.get<string>('FLW_SECRET_KEY');
     if (!key) throw new Error('FLW_SECRET_KEY is not set');
     const base = this.config.get<string>('FLW_BASE_URL') ?? DEFAULT_BASE_URL;
@@ -281,7 +334,7 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
       this.logger.warn(`Flutterwave ${method} ${path} -> ${res.status} ${json.message ?? ''}`);
       throw new Error(`Flutterwave ${method} ${path} failed: ${json.message ?? res.statusText}`);
     }
-    return json.data as T;
+    return json as FlwEnvelope<T>;
   }
 }
 

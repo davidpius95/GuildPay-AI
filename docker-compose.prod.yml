@@ -17,7 +17,7 @@ services:
       dockerfile: apps/api/Dockerfile
     container_name: guildpay-api
     restart: unless-stopped
-    env_file: .env
+    env_file: .env.production
     depends_on:
       guildpay-redis:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
       dockerfile: apps/dashboard/Dockerfile
     container_name: guildpay-dashboard
     restart: unless-stopped
-    env_file: .env
+    env_file: .env.production
     depends_on:
       - guildpay-api
     networks:
