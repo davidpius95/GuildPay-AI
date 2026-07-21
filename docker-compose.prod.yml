@@ -28,7 +28,7 @@ services:
       - traefik.enable=true
       - traefik.docker.network=guildserver
       # API owns webhooks + versioned API + health; higher priority than the dashboard catch-all.
-      - "traefik.http.routers.guildpay-api.rule=Host(`guildpay.guildserver.io`) && (PathPrefix(`/webhooks`) || PathPrefix(`/v1`) || PathPrefix(`/health`) || PathPrefix(`/kyc`))"
+      - "traefik.http.routers.guildpay-api.rule=Host(`guildpay.guildserver.io`) && (PathPrefix(`/webhooks`) || PathPrefix(`/v1`) || PathPrefix(`/health`))"
       - traefik.http.routers.guildpay-api.entrypoints=web
       - traefik.http.routers.guildpay-api.priority=100
       - traefik.http.services.guildpay-api.loadbalancer.server.port=3001

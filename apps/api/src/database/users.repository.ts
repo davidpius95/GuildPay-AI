@@ -60,15 +60,6 @@ export class UsersRepository {
     return rows[0] ?? null;
   }
 
-  /** Find the user who started an in-flight BVN consent verification, by its provider reference. */
-  async findByKycReference(reference: string): Promise<UserRow | null> {
-    const { rows } = await this.pool.query<UserRow>(
-      'select * from public.users where kyc_reference = $1 limit 1',
-      [reference],
-    );
-    return rows[0] ?? null;
-  }
-
   async findByAnyWaPhone(waPhones: string[]): Promise<UserRow | null> {
     const { rows } = await this.pool.query<UserRow>(
       'select * from public.users where wa_phone = any($1) limit 1',

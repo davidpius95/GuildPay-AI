@@ -38,9 +38,6 @@ function harness() {
 
   const users = {
     findByWaPhone: vi.fn(async () => user),
-    findByKycReference: vi.fn(async (ref: string) =>
-      user && user.kyc_reference === ref ? user : null,
-    ),
     create: vi.fn(async (wa: string) => (user = baseUser(wa))),
     update: vi.fn(async (_id: string, patch: Record<string, unknown>) => {
       user = { ...(user as UserRow), ...patch } as UserRow;
@@ -84,14 +81,8 @@ function harness() {
     bankName: 'Wema Bank',
     providerRef: 'flw_ref_1',
   }));
-  const verifyIdentity = vi.fn(async () => ({
-    type: 'bvn' as const,
-    status: 'pending' as const,
-    reference: 'bvnref1',
-    consentUrl: 'https://checkout.flutterwave.com/bvn/consent/abc',
-  }));
   const partners = {
-    forCurrency: vi.fn(() => ({ createVirtualAccount, verifyIdentity })),
+    forCurrency: vi.fn(() => ({ createVirtualAccount })),
   } as unknown as PartnerService;
 
   const flows = {
@@ -100,7 +91,7 @@ function harness() {
   } as unknown as import('../channel/whatsapp-flow.service').WhatsappFlowService;
 
   const svc = new OnboardingService(channel, flows, users, wallets, audit, partners, new PinService());
-  return { svc, sent, users, wallets, partners, createVirtualAccount, verifyIdentity, flows };
+  return { svc, sent, users, wallets, partners, createVirtualAccount, flows };
 }
 
 function msg(over: Partial<InboundMessage>): InboundMessage {
@@ -138,18 +129,11 @@ describe('OnboardingService', () => {
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'market_ng' }));
     expect(lastBody(h.sent)).toContain('BVN');
 
-    // invalid KYC is rejected; a valid BVN STARTS the consent flow (no wallet yet)
+    // invalid KYC is rejected; a valid BVN is verified in-chat and advances to PIN
     await h.svc.handle(msg({ text: '123' }));
     expect(lastBody(h.sent)).toContain("doesn't look right");
     await h.svc.handle(msg({ text: '12345678901' }));
-    expect(h.verifyIdentity).toHaveBeenCalledOnce();
-    expect(lastBody(h.sent)).toContain('secure link'); // consent URL sent
-    expect(lastBody(h.sent)).toContain('checkout.flutterwave.com');
-    expect(h.wallets.create).not.toHaveBeenCalled(); // nothing provisioned until consent
-
-    // Flutterwave confirms consent via the webhook → NUBAN provisioned, PIN step
-    await h.svc.completeBvnConsent('bvnref1', { type: 'bvn', status: 'verified' });
-    expect(h.createVirtualAccount).toHaveBeenCalledOnce();
+    expect(h.createVirtualAccount).toHaveBeenCalledOnce(); // NGN verifies + provisions NUBAN
     expect(lastBody(h.sent)).toContain('PIN');
 
     // invalid PIN rejected, valid 4-digit PIN advances to consent
@@ -159,7 +143,7 @@ describe('OnboardingService', () => {
     expect(last(h.sent).kind).toBe('interactive'); // consent buttons
     expect(lastBody(h.sent)).toContain('PIN saved');
 
-    // consent → wallet activated + welcome (wallet/NUBAN were provisioned at consent-completed)
+    // consent → wallet activated + welcome
     const handled = await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'consent_yes' }));
     expect(handled).toBe(true);
     expect(h.wallets.create).toHaveBeenCalledOnce();
@@ -170,7 +154,7 @@ describe('OnboardingService', () => {
     expect(lastBody(h.sent)).toContain('Wema Bank');
   });
 
-  it('blocks a failed BVN consent — no wallet, no account, drops back to the KYC step', async () => {
+  it('blocks an invalid BVN in-chat — no wallet, stays on the KYC step, then re-verifies', async () => {
     const h = harness();
     await h.svc.handle(msg({ text: 'hi' }));
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'lang_en' }));
@@ -178,44 +162,21 @@ describe('OnboardingService', () => {
     await h.svc.handle(msg({ text: 'ada@example.com' }));
     await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'market_ng' }));
 
-    // Consent starts, but the bank returns a non-verified result on the webhook.
+    // Flutterwave rejects a bad BVN when issuing the NUBAN → verification fails in-chat.
+    h.createVirtualAccount.mockRejectedValueOnce(new Error('BVN could not be verified'));
     await h.svc.handle(msg({ text: '99999999999' }));
-    expect(lastBody(h.sent)).toContain('secure link');
-    await h.svc.completeBvnConsent('bvnref1', { type: 'bvn', status: 'failed' });
-
-    expect(lastBody(h.sent)).toContain("didn't go through");
+    expect(lastBody(h.sent)).toContain('could not be verified');
     expect(h.wallets.create).not.toHaveBeenCalled(); // no wallet on failure
-    expect(h.createVirtualAccount).not.toHaveBeenCalled();
-    // KYC status recorded as failed, user dropped back to the kyc step.
+    // KYC status recorded as failed, user NOT advanced past the kyc step.
     const failedUpdate = (h.users.update as ReturnType<typeof vi.fn>).mock.calls.some(
       ([, patch]) => (patch as Record<string, unknown>).kyc_status === 'failed',
     );
     expect(failedUpdate).toBe(true);
 
-    // Re-entering a valid BVN restarts consent; confirmation now provisions the wallet.
+    // Re-entering a valid BVN verifies + provisions and advances to the PIN step.
     await h.svc.handle(msg({ text: '12345678901' }));
-    expect(lastBody(h.sent)).toContain('secure link');
-    await h.svc.completeBvnConsent('bvnref1', { type: 'bvn', status: 'verified' });
     expect(lastBody(h.sent)).toContain('PIN');
     expect(h.wallets.create).toHaveBeenCalledOnce();
-  });
-
-  it('ignores a BVN consent webhook once the user has moved past kyc_pending', async () => {
-    const h = harness();
-    await h.svc.handle(msg({ text: 'hi' }));
-    await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'lang_en' }));
-    await h.svc.handle(msg({ text: 'Ada Lovelace' }));
-    await h.svc.handle(msg({ text: 'ada@example.com' }));
-    await h.svc.handle(msg({ type: 'interactive', interactiveReplyId: 'market_ng' }));
-    await h.svc.handle(msg({ text: '12345678901' }));
-
-    // First confirmation provisions the wallet.
-    await h.svc.completeBvnConsent('bvnref1', { type: 'bvn', status: 'verified' });
-    expect(h.createVirtualAccount).toHaveBeenCalledOnce();
-
-    // A duplicate/late webhook delivery must NOT re-provision (idempotent).
-    await h.svc.completeBvnConsent('bvnref1', { type: 'bvn', status: 'verified' });
-    expect(h.createVirtualAccount).toHaveBeenCalledOnce();
   });
 
   it('QAR onboarding provisions a simulated account and shows it', async () => {

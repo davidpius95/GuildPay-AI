@@ -116,21 +116,4 @@ describe('FlutterwavePartnerAdapter.verifyIdentity — BVN consent', () => {
       /FLW_BVN_REDIRECT_URL/,
     );
   });
-
-  it('fetchBvnVerification re-reads authoritative status + name at source', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          status: 'success',
-          data: { reference: 'ref_1', status: 'COMPLETED', bvn_data: { first_name: 'Ada', last_name: 'Eze' } },
-        }),
-      })),
-    );
-    const adapter = new FlutterwavePartnerAdapter(config(cfg), v4);
-    const res = await adapter.fetchBvnVerification('ref_1');
-    expect(res).toEqual({ type: 'bvn', status: 'verified', reference: 'ref_1', name: 'Ada Eze' });
-  });
 });
