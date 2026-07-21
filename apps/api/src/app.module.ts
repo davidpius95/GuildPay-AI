@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { HealthController } from './health/health.controller';
+import { KycCallbackController } from './kyc/kyc-callback.controller';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
 import { ChannelModule } from './channel/channel.module';
@@ -43,6 +44,6 @@ import { AdminModule } from './admin/admin.module';
     WebhooksModule,
     AdminModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, KycCallbackController],
 })
 export class AppModule {}
