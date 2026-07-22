@@ -20,7 +20,7 @@
 
 | Capability | Xara | GuildPay (current) | Gap | Covered by |
 |---|---|---|---|---|
-| Onboarding UX | 1-click list template | 5-step wizard | 🟡 GuildPay more thorough | Phase 2 (optional List polish) |
+| Onboarding UX | Multi-screen Flow modal | Multi-screen Flow modal + chat fallback | ✅ Matched | **Phase 1b (done)** — `onboarding-flow.json` |
 | NUBAN provisioning | ✅ Flutterwave MFB | ✅ Flutterwave | ✅ Matched | — |
 | Bank transfer (NIP) | ✅ + name enquiry | ✅ + name enquiry | ✅ Matched | — |
 | PIN security | Flow modal | Chat-based PIN | 🔴 Major | **Phase 1** |
@@ -48,6 +48,13 @@
 - `bank-transfer.service.ts` + `transfer.service.ts` — `confirm()` sends the Flow when `WHATSAPP_PIN_FLOW_ID` is set and the user already has a PIN; **falls back to chat PIN** otherwise. Money still only moves via `submitPin`/`pinGate`.
 - **NEW** `docs/whatsapp-flows/pin-flow.json` — the Flow definition to upload in WhatsApp Manager.
 - Tests: flow body-building, `nfm_reply` decrypt+parse, and `no-otp-no-money` still holds.
+
+### Phase 1b — Native onboarding Flow (Xara-style modal) ✅
+Multi-screen encrypted Flow `onboarding-flow.json` (Welcome → Account Details → Address → PIN),
+routed by the `obflow_` flow-token prefix to `OnboardingService.handleFlowExchange`. BVN/NIN
+verified mid-flow (NUBAN provisioned on the Account Details submit); static 36-state `data-source`
+picker; funding card posted to chat on completion. Falls back to the chat wizard when
+`WHATSAPP_ONBOARDING_FLOW_ID` is unset. Reuses the PIN flow's keypair + endpoint.
 
 ### Phase 2 — WhatsApp List messages 🟡
 `OutboundList` type + Meta body builder + `list_reply` routing; convert onboarding language/market prompts and the balance quick-action menu to Lists.

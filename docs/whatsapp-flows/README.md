@@ -1,14 +1,41 @@
-# WhatsApp Flows — Secure PIN Entry
+# WhatsApp Flows
+
+Two encrypted data-exchange Flows that move sensitive input out of the chat thread
+into native WhatsApp modals. Both share one crypto layer, one endpoint, and one
+RSA keypair — they only differ by which Flow definition (and Flow ID) is used.
+
+- `apps/api/src/channel/whatsapp-flow.service.ts` — RSA/AES-GCM crypto + flow tokens
+- `apps/api/src/webhooks/whatsapp-flow.controller.ts` — `POST /webhooks/whatsapp/flow`
+  (routes by flow-token prefix: `obflow_` → onboarding, otherwise the PIN flow)
+- `pin-flow.json` — single-screen **transaction PIN** Flow
+- `onboarding-flow.json` — Xara-style **multi-screen onboarding** Flow
+  (Welcome → Account Details → Address → Set PIN), driven by
+  `apps/api/src/onboarding/onboarding.service.ts` → `handleFlowExchange`
+
+Both Flows degrade gracefully: with `WHATSAPP_PIN_FLOW_ID` unset the app uses the
+chat-based PIN; with `WHATSAPP_ONBOARDING_FLOW_ID` unset it uses the chat
+onboarding wizard. Nothing breaks before setup is complete.
+
+## The onboarding Flow (Xara parity)
+
+`onboarding-flow.json` is server-navigated: each screen's footer fires
+`data_exchange`, and `handleFlowExchange` validates + persists the data and returns
+the next screen. The **BVN/NIN is verified mid-flow** — on the Account Details
+submit we provision the Flutterwave NUBAN, and a bad ID re-shows that screen with an
+inline error instead of failing after the modal closes. The **State picker is a
+static `data-source`** in the JSON (36 states + FCT) — no external API. After the
+PIN screen the modal closes and the app posts the funding-account card to the chat.
+
+Setup is identical to the PIN flow below — reuse the same keypair, create the Flow
+from `onboarding-flow.json`, and set `WHATSAPP_ONBOARDING_FLOW_ID` to its Flow ID.
+To send it unprompted (Xara's "Hi 👋 … Complete Onboarding"), also create a **Flow
+message template** with a Flow button pointing at this Flow ID; in-session replies
+need no template.
+
+## The PIN Flow — secure PIN entry
 
 The encrypted data-exchange Flow that collects the transaction PIN inside a native
-WhatsApp modal instead of the chat thread. Backed by:
-
-- `apps/api/src/channel/whatsapp-flow.service.ts` — RSA/AES-GCM crypto + flow token
-- `apps/api/src/webhooks/whatsapp-flow.controller.ts` — `POST /webhooks/whatsapp/flow`
-- `pin-flow.json` — the Flow definition to upload in WhatsApp Manager
-
-When `WHATSAPP_PIN_FLOW_ID` is unset, the app automatically falls back to the
-chat-based PIN, so nothing breaks before setup is complete.
+WhatsApp modal instead of the chat thread.
 
 ## One-time setup
 

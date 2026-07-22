@@ -16,11 +16,13 @@ import { MetaCloudAdapter } from '../channel/meta-cloud.adapter';
 import {
   FLOW_SUCCESS_SCREEN,
   FlowDecryptError,
+  ONBOARDING_FLOW_TOKEN_PREFIX,
   PIN_SCREEN,
   WhatsappFlowService,
   type FlowEnvelope,
   type FlowRequest,
 } from '../channel/whatsapp-flow.service';
+import type { FlowScreenResponse } from '../onboarding/onboarding.service';
 import { MessageRouter } from '../banking/message-router.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
 
@@ -84,19 +86,33 @@ export class WhatsappFlowController {
       return { version, data: { acknowledged: true } };
     }
 
-    // Opening the flow → show the PIN screen.
+    // Every non-ping exchange carries a signed flow token; reject a tampered one.
+    const tokenData = this.flows.verifyFlowToken(request.flow_token);
+    if (!tokenData) {
+      // 427 → invalid/expired flow token; the client shows an error + closes.
+      throw new HttpException('invalid flow token', 427);
+    }
+
+    // Multi-screen onboarding Flow — delegate screen navigation to onboarding.
+    if (tokenData.startsWith(ONBOARDING_FLOW_TOKEN_PREFIX)) {
+      const userId = tokenData.slice(ONBOARDING_FLOW_TOKEN_PREFIX.length);
+      const res = await this.onboarding.handleFlowExchange(
+        userId,
+        request.action,
+        request.screen,
+        request.data ?? {},
+      );
+      return this.withVersionAndToken(version, request.flow_token, res);
+    }
+
+    // Opening the single-screen PIN flow → show the PIN screen.
     if (request.action === 'INIT' || request.action === 'BACK') {
       return { version, screen: PIN_SCREEN, data: {} };
     }
 
-    // PIN submitted → verify token → run the existing PIN money-gate or onboarding setup.
+    // PIN submitted → run the existing PIN money-gate or first-time PIN setup.
     if (request.action === 'data_exchange' && request.screen === PIN_SCREEN) {
-      const tokenData = this.flows.verifyFlowToken(request.flow_token);
       const pin = typeof request.data?.['pin'] === 'string' ? (request.data['pin'] as string) : '';
-      if (!tokenData) {
-        // 427 → invalid/expired flow token; the client shows an error + closes.
-        throw new HttpException('invalid flow token', 427);
-      }
 
       let result: string;
       let message: string;
@@ -133,5 +149,25 @@ export class WhatsappFlowController {
 
     this.logger.warn(`unhandled flow action/screen: ${request.action}/${request.screen}`);
     throw new HttpException('unsupported flow request', HttpStatus.BAD_REQUEST);
+  }
+
+  /**
+   * Finalize an onboarding screen response: add the protocol `version` and, on a
+   * terminal SUCCESS screen, inject the `flow_token` into the closing params (Meta
+   * echoes it back so the client can correlate the result).
+   */
+  private withVersionAndToken(
+    version: string,
+    flowToken: string | undefined,
+    res: FlowScreenResponse,
+  ): Record<string, unknown> {
+    const data: Record<string, unknown> = res.data ? { ...res.data } : {};
+    const emr = data['extension_message_response'] as
+      | { params?: Record<string, unknown> }
+      | undefined;
+    if (emr?.params) {
+      emr.params = { flow_token: flowToken, ...emr.params };
+    }
+    return { version, screen: res.screen, data };
   }
 }
