@@ -86,8 +86,8 @@ describe('FlutterwavePartnerAdapter.verifyIdentity — BVN consent', () => {
       message: 'Awaiting BVN consent',
     });
     // Redirect URL is passed through to Flutterwave.
-    const init = (fetchMock.mock.calls[0] as any[])[1] as { body: string };
-    expect(JSON.parse(init.body).redirect_url).toBe('https://guildpay/kyc/callback');
+    const call = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    expect(JSON.parse(call[1].body).redirect_url).toBe('https://guildpay/kyc/callback');
   });
 
   it('reads the consent URL from meta.authorization.redirect when data.url is absent', async () => {
@@ -115,22 +115,5 @@ describe('FlutterwavePartnerAdapter.verifyIdentity — BVN consent', () => {
     await expect(adapter.verifyIdentity({ type: 'bvn', idNumber: '12345678901' })).rejects.toThrow(
       /FLW_BVN_REDIRECT_URL/,
     );
-  });
-
-  it('fetchBvnVerification re-reads authoritative status + name at source', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          status: 'success',
-          data: { reference: 'ref_1', status: 'COMPLETED', bvn_data: { first_name: 'Ada', last_name: 'Eze' } },
-        }),
-      })),
-    );
-    const adapter = new FlutterwavePartnerAdapter(config(cfg), v4);
-    const res = await adapter.fetchBvnVerification('ref_1');
-    expect(res).toEqual({ type: 'bvn', status: 'verified', reference: 'ref_1', name: 'Ada Eze' });
   });
 });

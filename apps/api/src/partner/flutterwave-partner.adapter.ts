@@ -195,31 +195,6 @@ export class FlutterwavePartnerAdapter implements PartnerAdapter, MerchantOpsAda
     return { type: 'nin', status: mapKycStatus(data.status), name };
   }
 
-  /**
-   * Fetch the authoritative result of a BVN consent verification by its reference
-   * (`GET /bvn/verifications/:reference`). Used when the `bvn.verification.completed`
-   * webhook fires: we never trust the webhook body's status, we re-read at source —
-   * the same safe-by-construction pattern as inbound-funding verification.
-   * The raw BVN is never logged; only the resolved name (used to cross-check) is returned.
-   */
-  async fetchBvnVerification(reference: string): Promise<IdentityVerificationResult> {
-    const data = await this.flw<{
-      reference?: string;
-      status?: string;
-      bvn_data?: { first_name?: string; last_name?: string };
-      first_name?: string;
-      last_name?: string;
-    }>('GET', `/bvn/verifications/${encodeURIComponent(reference)}`);
-    const first = data.bvn_data?.first_name ?? data.first_name;
-    const last = data.bvn_data?.last_name ?? data.last_name;
-    const name = [first, last].filter(Boolean).join(' ') || undefined;
-    return {
-      type: 'bvn',
-      status: mapKycStatus(data.status),
-      reference: data.reference ?? reference,
-      name,
-    };
-  }
 
   /** Send money to an external bank (NIP). Final status arrives via the transfer.completed webhook. */
   async bankTransfer(req: BankTransferRequest): Promise<TransferResult> {

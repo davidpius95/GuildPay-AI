@@ -93,4 +93,28 @@ describe('FlutterwaveV4Client', () => {
       client.createVirtualAccount({ reference: 'r', customerId: 'c', bankCode: '035' }),
     ).rejects.toThrow(/bad bvn/);
   });
+
+  it('recovers from a 409 by reusing the existing customer id from the response body', async () => {
+    const f = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({ status: 'error', message: 'Customer already exists', data: { id: 'cus_existing' } }),
+    })) as unknown as typeof fetch;
+    const { client } = make(f);
+    // 409 on create → no throw; existing id recovered from the body (no lookup needed).
+    expect(await client.createCustomer({ email: 'a@b.co' }, 'cust:a@b.co')).toEqual({ id: 'cus_existing' });
+    expect((f as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1);
+  });
+
+  it('recovers from a 409 with no id by looking the customer up by email', async () => {
+    const f = vi.fn(async (url: string, init: RequestInit) => {
+      if (init.method === 'POST') {
+        return { ok: false, status: 409, json: async () => ({ status: 'error', message: 'Customer already exists' }) };
+      }
+      // GET /customers?email=... → return the matching customer.
+      return { ok: true, status: 200, json: async () => ({ data: [{ id: 'cus_looked_up', email: 'a@b.co' }] }) };
+    }) as unknown as typeof fetch;
+    const { client } = make(f);
+    expect(await client.createCustomer({ email: 'a@b.co' }, 'cust:a@b.co')).toEqual({ id: 'cus_looked_up' });
+  });
 });
