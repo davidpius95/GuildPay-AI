@@ -86,8 +86,8 @@ describe('FlutterwavePartnerAdapter.verifyIdentity — BVN consent', () => {
       message: 'Awaiting BVN consent',
     });
     // Redirect URL is passed through to Flutterwave.
-    const init = (fetchMock.mock.calls[0] as any[])[1] as { body: string };
-    expect(JSON.parse(init.body).redirect_url).toBe('https://guildpay/kyc/callback');
+    const call = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    expect(JSON.parse(call[1].body).redirect_url).toBe('https://guildpay/kyc/callback');
   });
 
   it('reads the consent URL from meta.authorization.redirect when data.url is absent', async () => {
