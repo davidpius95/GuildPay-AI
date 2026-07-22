@@ -13,9 +13,14 @@ export interface UserRow {
   market: string | null;
   currency: string | null;
   kyc_id: string | null;
+  id_type: string | null;
   kyc_status: string;
   kyc_reference: string | null;
   kyc_expiry: string | null;
+  address_street: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  referral_code: string | null;
   consent_at: string | null;
   pin_hash: string | null;
   status: string;
@@ -36,8 +41,13 @@ export type UserUpdate = Partial<
     | 'market'
     | 'currency'
     | 'kyc_id'
+    | 'id_type'
     | 'kyc_status'
     | 'kyc_reference'
+    | 'address_street'
+    | 'address_city'
+    | 'address_state'
+    | 'referral_code'
     | 'pin_hash'
     | 'status'
     | 'onboarding_step'

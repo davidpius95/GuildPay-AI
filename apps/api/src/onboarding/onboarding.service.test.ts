@@ -20,9 +20,14 @@ function baseUser(waPhone: string): UserRow {
     market: null,
     currency: null,
     kyc_id: null,
+    id_type: null,
     kyc_status: 'pending',
     kyc_reference: null,
     kyc_expiry: null,
+    address_street: null,
+    address_city: null,
+    address_state: null,
+    referral_code: null,
     consent_at: null,
     pin_hash: null,
     status: 'pending',
@@ -32,12 +37,13 @@ function baseUser(waPhone: string): UserRow {
   };
 }
 
-function harness() {
+function harness(opts: { channelName?: 'meta' | 'twilio'; onboardingFlow?: boolean } = {}) {
   let user: UserRow | null = null;
   const sent: OutboundMessage[] = [];
 
   const users = {
     findByWaPhone: vi.fn(async () => user),
+    findById: vi.fn(async () => user),
     create: vi.fn(async (wa: string) => (user = baseUser(wa))),
     update: vi.fn(async (_id: string, patch: Record<string, unknown>) => {
       user = { ...(user as UserRow), ...patch } as UserRow;
@@ -71,6 +77,7 @@ function harness() {
 
   const audit = { record: vi.fn(async () => undefined) } as unknown as AuditRepository;
   const channel = {
+    name: opts.channelName ?? 'twilio',
     send: vi.fn(async (m: OutboundMessage) => {
       sent.push(m);
     }),
@@ -87,7 +94,17 @@ function harness() {
 
   const flows = {
     isEnabled: vi.fn(() => false),
+    isOnboardingEnabled: vi.fn(() => opts.onboardingFlow ?? false),
     buildSetupPinFlowMessage: vi.fn(() => ({ kind: 'flow' })),
+    buildOnboardingFlowMessage: vi.fn((to: string, userId: string) => ({
+      to,
+      kind: 'flow',
+      body: 'Please tap the button below to complete your onboarding.',
+      flowId: 'obf_1',
+      flowToken: `obflow_${userId}`,
+      screenId: 'WELCOME',
+      buttonTitle: 'Complete Onboarding',
+    })),
   } as unknown as import('../channel/whatsapp-flow.service').WhatsappFlowService;
 
   const svc = new OnboardingService(channel, flows, users, wallets, audit, partners, new PinService());
@@ -200,5 +217,100 @@ describe('OnboardingService', () => {
     // force to done
     await h.svc['users'].update('u1', { onboarding_step: 'done' });
     expect(await h.svc.handle(msg({ text: 'balance' }))).toBe(false);
+  });
+
+  describe('native onboarding Flow (Meta)', () => {
+    it('launches the Complete Onboarding modal for a new Meta user instead of the chat wizard', async () => {
+      const h = harness({ channelName: 'meta', onboardingFlow: true });
+      expect(await h.svc.handle(msg({ text: 'hi' }))).toBe(true);
+      expect(h.users.create).toHaveBeenCalledOnce();
+      const flowMsg = h.sent.find((m) => m.kind === 'flow');
+      expect(flowMsg).toBeDefined();
+      expect((flowMsg as { buttonTitle: string }).buttonTitle).toBe('Complete Onboarding');
+      // No chat language list is sent when the Flow drives onboarding.
+      expect(h.sent.some((m) => m.kind === 'list')).toBe(false);
+    });
+
+    it('drives the modal screens: welcome → account details (provisions NUBAN) → address → PIN → active', async () => {
+      const h = harness({ channelName: 'meta', onboardingFlow: true });
+      await h.svc.handle(msg({ text: 'hi' })); // creates user + sends flow
+      const userId = 'u1';
+
+      // INIT opens the welcome screen.
+      expect((await h.svc.handleFlowExchange(userId, 'INIT', undefined, {})).screen).toBe('WELCOME');
+
+      // Consent → account details.
+      expect((await h.svc.handleFlowExchange(userId, 'data_exchange', 'WELCOME', {})).screen).toBe(
+        'ACCOUNT_DETAILS',
+      );
+
+      // Account details validated → provisions the NUBAN → advances to address.
+      const acct = await h.svc.handleFlowExchange(userId, 'data_exchange', 'ACCOUNT_DETAILS', {
+        first_name: 'Ada',
+        last_name: 'Obi',
+        id_type: 'BVN',
+        id_number: '12345678901',
+        email: '',
+        referral: '',
+      });
+      expect(acct.screen).toBe('ADDRESS');
+      expect(h.createVirtualAccount).toHaveBeenCalledOnce();
+      expect(h.wallets.create).toHaveBeenCalledWith(expect.objectContaining({ currency: 'NGN' }));
+
+      // Address → PIN.
+      const addr = await h.svc.handleFlowExchange(userId, 'data_exchange', 'ADDRESS', {
+        street: '1 Marina',
+        city: 'Lagos',
+        state: 'Lagos',
+      });
+      expect(addr.screen).toBe('PIN');
+
+      // PIN set + confirmed → terminal SUCCESS + funding card pushed to chat.
+      const pin = await h.svc.handleFlowExchange(userId, 'data_exchange', 'PIN', {
+        pin: '4821',
+        retype: '4821',
+      });
+      expect(pin.screen).toBe('SUCCESS');
+      expect(h.sent.some((m) => 'body' in m && m.body.includes('9900001111'))).toBe(true);
+      expect(h.sent.some((m) => 'body' in m && m.body.includes('Central Bank of Nigeria'))).toBe(true);
+    });
+
+    it('re-shows Account Details with an inline error when the BVN fails — no NUBAN advance', async () => {
+      const h = harness({ channelName: 'meta', onboardingFlow: true });
+      await h.svc.handle(msg({ text: 'hi' }));
+      h.createVirtualAccount.mockRejectedValueOnce(new Error('BVN could not be verified'));
+      const res = await h.svc.handleFlowExchange('u1', 'data_exchange', 'ACCOUNT_DETAILS', {
+        first_name: 'Ada',
+        last_name: 'Obi',
+        id_type: 'BVN',
+        id_number: '99999999999',
+      });
+      expect(res.screen).toBe('ACCOUNT_DETAILS');
+      expect(res.data?.has_error).toBe(true);
+      expect(String(res.data?.error_message)).toContain('could not be verified');
+      expect(h.wallets.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects mismatched PINs on the PIN screen', async () => {
+      const h = harness({ channelName: 'meta', onboardingFlow: true });
+      await h.svc.handle(msg({ text: 'hi' }));
+      await h.svc.handleFlowExchange('u1', 'data_exchange', 'ACCOUNT_DETAILS', {
+        first_name: 'Ada',
+        last_name: 'Obi',
+        id_type: 'BVN',
+        id_number: '12345678901',
+      });
+      await h.svc.handleFlowExchange('u1', 'data_exchange', 'ADDRESS', {
+        street: '1 Marina',
+        city: 'Lagos',
+        state: 'Lagos',
+      });
+      const res = await h.svc.handleFlowExchange('u1', 'data_exchange', 'PIN', {
+        pin: '4821',
+        retype: '9999',
+      });
+      expect(res.screen).toBe('PIN');
+      expect(res.data?.has_error).toBe(true);
+    });
   });
 });

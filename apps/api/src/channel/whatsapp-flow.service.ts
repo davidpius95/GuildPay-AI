@@ -19,6 +19,17 @@ export const FLOW_SUCCESS_SCREEN = 'SUCCESS';
 /** The single data-entry screen of the PIN flow (must match pin-flow.json). */
 export const PIN_SCREEN = 'PIN_SCREEN';
 
+/** Screens of the multi-step onboarding flow (must match onboarding-flow.json). */
+export const ONBOARDING_SCREENS = {
+  WELCOME: 'WELCOME',
+  ACCOUNT_DETAILS: 'ACCOUNT_DETAILS',
+  ADDRESS: 'ADDRESS',
+  PIN: 'PIN',
+} as const;
+
+/** Flow-token prefix identifying the multi-step onboarding flow (vs the PIN flow). */
+export const ONBOARDING_FLOW_TOKEN_PREFIX = 'obflow_';
+
 /** Decrypted body of a WhatsApp Flow data-exchange request. */
 export interface FlowRequest {
   version: string;
@@ -61,6 +72,26 @@ export class WhatsappFlowService {
   /** The Flow is active only when a Flow ID is configured. */
   isEnabled(): boolean {
     return !!this.config.get<string>('WHATSAPP_PIN_FLOW_ID');
+  }
+
+  /** The Xara-style multi-step onboarding Flow is active only when its Flow ID is configured. */
+  isOnboardingEnabled(): boolean {
+    return !!this.config.get<string>('WHATSAPP_ONBOARDING_FLOW_ID');
+  }
+
+  /** Build the outbound "Complete Onboarding" Flow message for a first-time user. */
+  buildOnboardingFlowMessage(to: string, userId: string): OutboundFlow {
+    const mode = this.config.get<string>('WHATSAPP_FLOW_MODE') === 'draft' ? 'draft' : 'published';
+    return {
+      to,
+      kind: 'flow',
+      body: 'Please tap the button below to complete your onboarding and set up your personal GuildPay account.',
+      flowId: this.config.get<string>('WHATSAPP_ONBOARDING_FLOW_ID') ?? '',
+      flowToken: this.signFlowToken(`${ONBOARDING_FLOW_TOKEN_PREFIX}${userId}`),
+      screenId: ONBOARDING_SCREENS.WELCOME,
+      buttonTitle: 'Complete Onboarding',
+      mode,
+    };
   }
 
   /** Build the outbound PIN Flow message for a pending transaction. */

@@ -1,0 +1,232 @@
+{
+  "version": "6.3",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "WELCOME": ["ACCOUNT_DETAILS"],
+    "ACCOUNT_DETAILS": ["ADDRESS"],
+    "ADDRESS": ["PIN"],
+    "PIN": []
+  },
+  "screens": [
+    {
+      "id": "WELCOME",
+      "title": "Complete Onboarding",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "GuildPay partners with CBN-licensed banks to provide secure banking on WhatsApp. Transactions are PIN-approved, protected by multiple layers of security, and your data is encrypted in line with NDPC requirements."
+          },
+          {
+            "type": "TextCaption",
+            "text": "By tapping Continue, you agree to GuildPay's Terms of Service and Privacy Policy."
+          },
+          {
+            "type": "Footer",
+            "label": "Continue",
+            "on-click-action": { "name": "data_exchange", "payload": {} }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ACCOUNT_DETAILS",
+      "title": "Account Details",
+      "data": {
+        "error_message": { "type": "string", "__example__": "" },
+        "has_error": { "type": "boolean", "__example__": false }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "${data.error_message}",
+            "visible": "${data.has_error}"
+          },
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              { "type": "TextInput", "name": "first_name", "label": "First Name", "required": true },
+              { "type": "TextInput", "name": "last_name", "label": "Last Name", "required": true },
+              {
+                "type": "Dropdown",
+                "name": "id_type",
+                "label": "ID Type",
+                "required": true,
+                "data-source": [
+                  { "id": "BVN", "title": "BVN" },
+                  { "id": "NIN", "title": "NIN" }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "id_number",
+                "label": "ID Number",
+                "input-type": "number",
+                "required": true,
+                "helper-text": "GuildPay is NDPC-certified; your personal data is protected"
+              },
+              { "type": "TextInput", "name": "email", "label": "Email (optional)", "input-type": "email" },
+              { "type": "TextInput", "name": "referral", "label": "Referral Code (optional)" },
+              {
+                "type": "Footer",
+                "label": "Next",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "first_name": "${form.first_name}",
+                    "last_name": "${form.last_name}",
+                    "id_type": "${form.id_type}",
+                    "id_number": "${form.id_number}",
+                    "email": "${form.email}",
+                    "referral": "${form.referral}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ADDRESS",
+      "title": "Your Address",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              { "type": "TextInput", "name": "street", "label": "Street", "required": true },
+              { "type": "TextInput", "name": "city", "label": "City", "required": true },
+              {
+                "type": "Dropdown",
+                "name": "state",
+                "label": "State",
+                "required": true,
+                "data-source": [
+                  { "id": "Abia", "title": "Abia" },
+                  { "id": "Adamawa", "title": "Adamawa" },
+                  { "id": "Akwa Ibom", "title": "Akwa Ibom" },
+                  { "id": "Anambra", "title": "Anambra" },
+                  { "id": "Bauchi", "title": "Bauchi" },
+                  { "id": "Bayelsa", "title": "Bayelsa" },
+                  { "id": "Benue", "title": "Benue" },
+                  { "id": "Borno", "title": "Borno" },
+                  { "id": "Cross River", "title": "Cross River" },
+                  { "id": "Delta", "title": "Delta" },
+                  { "id": "Ebonyi", "title": "Ebonyi" },
+                  { "id": "Edo", "title": "Edo" },
+                  { "id": "Ekiti", "title": "Ekiti" },
+                  { "id": "Enugu", "title": "Enugu" },
+                  { "id": "FCT", "title": "FCT - Abuja" },
+                  { "id": "Gombe", "title": "Gombe" },
+                  { "id": "Imo", "title": "Imo" },
+                  { "id": "Jigawa", "title": "Jigawa" },
+                  { "id": "Kaduna", "title": "Kaduna" },
+                  { "id": "Kano", "title": "Kano" },
+                  { "id": "Katsina", "title": "Katsina" },
+                  { "id": "Kebbi", "title": "Kebbi" },
+                  { "id": "Kogi", "title": "Kogi" },
+                  { "id": "Kwara", "title": "Kwara" },
+                  { "id": "Lagos", "title": "Lagos" },
+                  { "id": "Nasarawa", "title": "Nasarawa" },
+                  { "id": "Niger", "title": "Niger" },
+                  { "id": "Ogun", "title": "Ogun" },
+                  { "id": "Ondo", "title": "Ondo" },
+                  { "id": "Osun", "title": "Osun" },
+                  { "id": "Oyo", "title": "Oyo" },
+                  { "id": "Plateau", "title": "Plateau" },
+                  { "id": "Rivers", "title": "Rivers" },
+                  { "id": "Sokoto", "title": "Sokoto" },
+                  { "id": "Taraba", "title": "Taraba" },
+                  { "id": "Yobe", "title": "Yobe" },
+                  { "id": "Zamfara", "title": "Zamfara" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Next",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "street": "${form.street}",
+                    "city": "${form.city}",
+                    "state": "${form.state}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIN",
+      "title": "Set Transaction Approval PIN",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "error_message": { "type": "string", "__example__": "" },
+        "has_error": { "type": "boolean", "__example__": false }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "This 4-digit PIN will be required to approve every transaction, helping keep your account secure."
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.error_message}",
+            "visible": "${data.has_error}"
+          },
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "pin",
+                "label": "PIN",
+                "input-type": "passcode",
+                "required": true,
+                "min-chars": 4,
+                "max-chars": 4,
+                "helper-text": "A 4-digit number you can easily remember"
+              },
+              {
+                "type": "TextInput",
+                "name": "retype",
+                "label": "Retype PIN",
+                "input-type": "passcode",
+                "required": true,
+                "min-chars": 4,
+                "max-chars": 4,
+                "helper-text": "Re-enter your PIN to confirm"
+              },
+              {
+                "type": "Footer",
+                "label": "Submit",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "pin": "${form.pin}",
+                    "retype": "${form.retype}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
