@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 /** Absolute URL on the public host (behind Cloudflare/Traefik) for a safe redirect. */
 function urlFor(req: Request, path: string): URL {
-  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? 'guildpay.guildserver.io';
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? 'guildpay.guild-technologies.com';
   return new URL(path, `https://${host}`);
 }
 

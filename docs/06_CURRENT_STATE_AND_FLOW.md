@@ -36,7 +36,7 @@ WhatsApp user
 Meta WhatsApp Cloud API
      │  HTTPS POST (X-Hub-Signature-256)
      ▼
-Cloudflare Tunnel ──► Traefik ──► NestJS API  (guildpay.guildserver.io)
+Cloudflare Tunnel ──► Traefik ──► NestJS API  (guildpay.guild-technologies.com)
                                      │
       ┌──────────────────────────────┼───────────────────────────────┐
       ▼                              ▼                                ▼

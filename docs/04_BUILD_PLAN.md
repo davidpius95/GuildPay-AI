@@ -6,7 +6,7 @@
 
 ## Week 0 — Setup (1–2 days)
 - [x] Monorepo scaffold: `apps/api`, `apps/dashboard`, `packages/shared`; CI (lint, typecheck, test)
-- [x] Docker Compose for local (api, postgres, redis); prod stack for guildpay.guildserver.io
+- [x] Docker Compose for local (api, postgres, redis); prod stack for guildpay.guild-technologies.com
 - [x] `ChannelAdapter` (Meta + Twilio) + `PartnerAdapter`/`BillsAdapter` boundaries stubbed
 - [ ] Create accounts: Meta Business + WhatsApp app (test number), Anthropic, STT (OpenAI or self-host),
       Flutterwave (sandbox). **Submit Meta business verification first — longest lead time.**

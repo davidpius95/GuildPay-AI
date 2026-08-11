@@ -49,7 +49,7 @@ Full detail lives in `/docs`. Read these before planning work:
     accounts: NGN → `FlutterwavePartnerAdapter` (virtual NUBAN, name enquiry, NIP payout, fund
     webhook `verif-hash`); QAR → `MockPartnerAdapter` (simulated).
   - **`BillsAdapter`** (VTU, via `BillsService`) — NGN → `FlutterwaveBillsAdapter` (airtime/data/bills).
-- **Hosting:** self-hosted on Guild Server (Docker + Traefik + Cloudflare Tunnel → guildpay.guildserver.io)
+- **Hosting:** self-hosted on Guild Server (Docker + Traefik + Cloudflare Tunnel → guildpay.guild-technologies.com)
 
 ## HOW — conventions & guardrails
 - **Monorepo:** `apps/api` (NestJS), `apps/dashboard` (Next.js), `packages/shared` (zod schemas + types).

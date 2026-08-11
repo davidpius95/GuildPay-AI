@@ -1,10 +1,10 @@
 # GuildPay AI — production stack for the Guild Server box.
 # Routed by the existing Traefik (`guildserver-traefik`) on the external `guildserver` network,
-# reached publicly via the Cloudflare Tunnel wildcard *.guildserver.io -> localhost:80.
+# reached publicly via the Cloudflare Tunnel wildcard *.guild-technologies.com -> localhost:80.
 #
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
-# Host used: guildpay.guildserver.io   (already resolves; no DNS/cloudflared change needed)
+# Host used: guildpay.guild-technologies.com   (already resolves; no DNS/cloudflared change needed)
 #
 # Database + Storage + Auth = SUPABASE (self-hosted on this box, or Supabase cloud). No Postgres
 # container here: set DATABASE_URL + SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env. If the API
@@ -28,7 +28,7 @@ services:
       - traefik.enable=true
       - traefik.docker.network=guildserver
       # API owns webhooks + versioned API + health; higher priority than the dashboard catch-all.
-      - "traefik.http.routers.guildpay-api.rule=Host(`guildpay.guildserver.io`) && (PathPrefix(`/webhooks`) || PathPrefix(`/v1`) || PathPrefix(`/health`))"
+      - "traefik.http.routers.guildpay-api.rule=Host(`guildpay.guild-technologies.com`) && (PathPrefix(`/webhooks`) || PathPrefix(`/v1`) || PathPrefix(`/health`))"
       - traefik.http.routers.guildpay-api.entrypoints=web
       - traefik.http.routers.guildpay-api.priority=100
       - traefik.http.services.guildpay-api.loadbalancer.server.port=3001
@@ -48,7 +48,7 @@ services:
       - traefik.enable=true
       - traefik.docker.network=guildserver
       # Catch-all for the host: everything not claimed by the API router.
-      - "traefik.http.routers.guildpay-web.rule=Host(`guildpay.guildserver.io`)"
+      - "traefik.http.routers.guildpay-web.rule=Host(`guildpay.guild-technologies.com`)"
       - traefik.http.routers.guildpay-web.entrypoints=web
       - traefik.http.routers.guildpay-web.priority=1
       - traefik.http.services.guildpay-web.loadbalancer.server.port=3000

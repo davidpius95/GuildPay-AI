@@ -1,7 +1,7 @@
 # GuildPay AI — Accounts, APIs, Webhooks & Deployment Guide
 
 > Everything you need to sign up for, every environment variable, every webhook, and how to
-> deploy to **guildpay.guildserver.io** on your own Guild Server box (Docker + Traefik +
+> deploy to **guildpay.guild-technologies.com** on your own Guild Server box (Docker + Traefik +
 > Cloudflare Tunnel). Optimised for **free / free-tier** services.
 
 ---
@@ -11,7 +11,7 @@
 | Service | Purpose | Free? | Notes |
 |---|---|---|---|
 | **Your Guild Server** | Hosting (api + dashboard + db + redis) | ✅ Free | You already own it. Docker + Traefik + tunnel already running. |
-| **Cloudflare Tunnel + DNS** | Public HTTPS for `guildpay.guildserver.io` | ✅ Free | Wildcard route already exists — subdomain already resolves. |
+| **Cloudflare Tunnel + DNS** | Public HTTPS for `guildpay.guild-technologies.com` | ✅ Free | Wildcard route already exists — subdomain already resolves. |
 | **Meta WhatsApp Cloud API** | Send/receive WhatsApp | ✅ Free tier | 1,000 service conversations/mo free. Test number is free. |
 | **Twilio WhatsApp Sandbox** | Fallback channel | ✅ Free | Instant sandbox; only if Meta verification stalls. |
 | **Supabase** (self-hosted on your box) | Postgres (system of record + ledger) + Storage (media) + Auth (dashboard) | ✅ Free | You already run Supabase on the Guild Server. (Supabase cloud free tier also works.) |
@@ -96,6 +96,7 @@ you're ready to move real funds.
 4. **Re-set the webhook in Live mode** (webhook config is per-mode — the test-mode hash does NOT carry
    over). Set the URL + a fresh **Secret hash** → `FLW_WEBHOOK_SECRET_HASH` (see §4).
 5. Set `FLW_BVN_REDIRECT_URL` to your consent return URL (only needed for the Option A consent flow).
+    `FLW_BVN_REDIRECT_URL=https://guildpay.guild-technologies.com/kyc/bvn-callback`
 
 **BVN — two ways, pick one (implemented in `FlutterwavePartnerAdapter`):**
 - **Option B (default, simplest):** pass the user's `bvn` straight into permanent-NUBAN creation
@@ -122,7 +123,7 @@ Sign up https://sentry.io (free tier) → create a Node project → copy the DSN
 
 ---
 
-## 2. Domain: guildpay.guildserver.io
+## 2. Domain: guildpay.guild-technologies.com
 
 **Good news — it already works.** Your Cloudflare Tunnel (`/etc/cloudflared/config.yml`) already has:
 
@@ -134,16 +135,16 @@ ingress:
   - service: http_status:404
 ```
 
-And `dig guildpay.guildserver.io` already returns Cloudflare IPs, so DNS is in place (wildcard).
-Traffic to `https://guildpay.guildserver.io` → Cloudflare edge (TLS terminated here) → tunnel →
+And `dig guildpay.guild-technologies.com` already returns Cloudflare IPs, so DNS is in place (wildcard).
+Traffic to `https://guildpay.guild-technologies.com` → Cloudflare edge (TLS terminated here) → tunnel →
 `localhost:80` → **Traefik** → routed by `Host` header to the right container.
 
 **So you do NOT need to touch cloudflared or DNS.** You only add a container with Traefik labels for
-`Host(\`guildpay.guildserver.io\`)`. That's done for you in `docker-compose.prod.yml` (§6).
+`Host(\`guildpay.guild-technologies.com\`)`. That's done for you in `docker-compose.prod.yml` (§6).
 
 *If you ever want an explicit (non-wildcard) DNS record instead:*
 ```bash
-cloudflared tunnel route dns 1c20b73e-b364-41a2-915b-e3b91e9927c8 guildpay.guildserver.io
+cloudflared tunnel route dns 1c20b73e-b364-41a2-915b-e3b91e9927c8 guildpay.guild-technologies.com
 ```
 
 ---
@@ -157,7 +158,7 @@ Copy `.env.production.example` → `.env` on the server and fill these in. **Nev
 | `NODE_ENV` | ✅ | `production` |
 | `API_PORT` | ✅ | `3001` (internal) |
 | `DASHBOARD_PORT` | ✅ | `3000` (internal) |
-| `PUBLIC_BASE_URL` | ✅ | `https://guildpay.guildserver.io` |
+| `PUBLIC_BASE_URL` | ✅ | `https://guildpay.guild-technologies.com` |
 | `LOG_LEVEL` | – | `info` |
 | `CHANNEL_ADAPTER` | ✅ | `meta` or `twilio` |
 | `META_WHATSAPP_TOKEN` | ✅ (meta) | Meta → WhatsApp → API Setup (system-user token) |
@@ -202,18 +203,18 @@ All webhooks are public HTTPS URLs under your domain (TLS handled by Cloudflare)
 
 | Webhook | URL | Verification |
 |---|---|---|
-| **WhatsApp (Meta)** | `https://guildpay.guildserver.io/webhooks/whatsapp` | GET verify challenge with `META_WEBHOOK_VERIFY_TOKEN`; POST bodies signed with `X-Hub-Signature-256` (HMAC-SHA256 of raw body using `META_APP_SECRET`). |
-| **WhatsApp (Twilio)** | `https://guildpay.guildserver.io/webhooks/twilio` | Validate `X-Twilio-Signature`. |
-| **Flutterwave** | `https://guildpay.guildserver.io/webhooks/flutterwave` | Compare `verif-hash` header to `FLW_WEBHOOK_SECRET_HASH`. |
+| **WhatsApp (Meta)** | `https://guildpay.guild-technologies.com/webhooks/whatsapp` | GET verify challenge with `META_WEBHOOK_VERIFY_TOKEN`; POST bodies signed with `X-Hub-Signature-256` (HMAC-SHA256 of raw body using `META_APP_SECRET`). |
+| **WhatsApp (Twilio)** | `https://guildpay.guild-technologies.com/webhooks/twilio` | Validate `X-Twilio-Signature`. |
+| **Flutterwave** | `https://guildpay.guild-technologies.com/webhooks/flutterwave` | Compare `verif-hash` header to `FLW_WEBHOOK_SECRET_HASH`. |
 
 **Meta webhook setup:** Meta → App → WhatsApp → Configuration → Edit:
-- **Callback URL:** `https://guildpay.guildserver.io/webhooks/whatsapp`
+- **Callback URL:** `https://guildpay.guild-technologies.com/webhooks/whatsapp`
 - **Verify token:** the exact string you set in `META_WEBHOOK_VERIFY_TOKEN`
 - **Subscribe** to the `messages` field.
 
 **Flutterwave webhook setup:** Dashboard → Settings → Webhooks (set this **per mode** — test and live
 are separate):
-- **URL:** `https://guildpay.guildserver.io/webhooks/flutterwave`
+- **URL:** `https://guildpay.guild-technologies.com/webhooks/flutterwave`
 - **Secret hash:** the exact string you set in `FLW_WEBHOOK_SECRET_HASH`.
 - One URL receives **all** events; `FlutterwaveController` verifies `verif-hash` then switches on `event`.
 
@@ -256,7 +257,7 @@ Detected on `usher-node@143.105.102.121` (read-only check):
 - **Node** 20.20, **pnpm** 10.34, **git** 2.43.
 - **Traefik v3.6** (`guildserver-traefik`) is the ingress on ports 80/443/8080, docker provider,
   network `guildserver`, `exposedbydefault=false`, Let's Encrypt resolver `letsencrypt`.
-- **Cloudflared** systemd service, tunnel `1c20b73e-…`, wildcard `*.guildserver.io → localhost:80`.
+- **Cloudflared** systemd service, tunnel `1c20b73e-…`, wildcard `*.guild-technologies.com → localhost:80`.
 - A self-hosted **Supabase BaaS platform** already running (multiple stacks) — **GuildPay uses this
   for Postgres + Storage + Auth.** Create a dedicated GuildPay project/schema on it.
 - GuildPay adds only a **`guildpay-redis`** container (Supabase provides no cache/session store).
@@ -290,7 +291,7 @@ docker compose -f docker-compose.prod.yml logs -f guildpay-api
 ### 6.3 Verify
 ```bash
 # from your laptop:
-curl https://guildpay.guildserver.io/health          # -> {"status":"ok",...}
+curl https://guildpay.guild-technologies.com/health          # -> {"status":"ok",...}
 ```
 Then set the Meta and Flutterwave webhook URLs (§4) and send a WhatsApp message to your test number.
 
@@ -301,8 +302,8 @@ your Supabase project and set `MEDIA_STORAGE=supabase` + `SUPABASE_MEDIA_BUCKET=
 remains available as a fallback for pure-offline dev.
 
 ### 6.5 How routing works (already wired in the compose labels)
-- `guildpay.guildserver.io/` → **dashboard** container (Next.js, port 3000)
-- `guildpay.guildserver.io/webhooks/*`, `/v1/*`, `/health` → **api** container (NestJS, port 3001)
+- `guildpay.guild-technologies.com/` → **dashboard** container (Next.js, port 3000)
+- `guildpay.guild-technologies.com/webhooks/*`, `/v1/*`, `/health` → **api** container (NestJS, port 3001)
 
 Both containers join the external `guildserver` network so Traefik discovers them. Postgres and Redis
 stay on a private `guildpay-internal` network (not exposed publicly).
@@ -338,7 +339,7 @@ stay on a private `guildpay-internal` network (not exposed publicly).
 - [ ] Supabase project: URL + anon + service-role keys + `DATABASE_URL` + `guildpay-media` bucket  → `.env`
 - [ ] Invent `META_WEBHOOK_VERIFY_TOKEN`, `FLW_WEBHOOK_SECRET_HASH`  → `.env`
 - [ ] `docker compose -f docker-compose.prod.yml up -d --build` on the server
-- [ ] `curl https://guildpay.guildserver.io/health` returns ok
+- [ ] `curl https://guildpay.guild-technologies.com/health` returns ok
 - [ ] Set Meta webhook URL + verify token; subscribe to `messages`
 - [ ] Set Flutterwave webhook URL + secret hash
 - [ ] Rotate SSH password + move to keys

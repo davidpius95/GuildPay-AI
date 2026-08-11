@@ -76,7 +76,7 @@ curl "https://graph.facebook.com/v21.0/${META_PHONE_NUMBER_ID}/whatsapp_business
 1. WhatsApp Manager → **Flows** → **Create Flow** → start blank.
 2. In the editor, paste the contents of `pin-flow.json`.
 3. **Endpoint URI:** `https://<your-domain>/webhooks/whatsapp/flow`
-   (e.g. `https://guildpay.guildserver.io/webhooks/whatsapp/flow`).
+   (e.g. `https://guildpay.guild-technologies.com/webhooks/whatsapp/flow`).
 4. Save. Meta sends a **health-check ping** to the endpoint — it must return
    `{ "data": { "status": "active" } }` (encrypted). Our controller handles this.
 5. **Publish** the Flow, then copy its **Flow ID**.

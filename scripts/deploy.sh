@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-# Deploy GuildPay to the Guild Server (guildpay.guildserver.io).
+# Deploy GuildPay to the Guild Server (guildpay.guild-technologies.com).
 #
 # Best-practice guarantees:
 #   • Only *committed* code is deployed — refuses a dirty working tree so prod
@@ -70,8 +69,8 @@ $SSH "$SSH_HOST" "cd $REMOTE_DIR && \
 # 5. Health check via the public host.
 echo "→ health check"
 sleep 5
-if curl -fsS --max-time 20 https://guildpay.guildserver.io/health >/dev/null; then
-  echo "✓ deployed $SHA — https://guildpay.guildserver.io/health ok"
+if curl -fsS --max-time 20 https://guildpay.guild-technologies.com/health >/dev/null; then
+  echo "✓ deployed $SHA — https://guildpay.guild-technologies.com/health ok"
 else
   echo "✗ health check failed — inspect: $SSH $SSH_HOST 'docker logs guildpay-api'" >&2
   exit 1
