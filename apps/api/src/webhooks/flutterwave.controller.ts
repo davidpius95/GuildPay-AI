@@ -49,7 +49,7 @@ interface FlwWebhook {
  * Acks Meta/Flutterwave immediately (200) and processes in the background so a slow
  * verify call never triggers webhook retries. Duplicate deliveries are deduped on flw_ref.
  */
-@Controller('webhooks/flutterwave')
+@Controller(['webhooks/flutterwave', 'webhooks/flutterwave-v4'])
 export class FlutterwaveController {
   private readonly logger = new Logger(FlutterwaveController.name);
 
