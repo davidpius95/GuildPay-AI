@@ -19,7 +19,7 @@ import { WalletFundingService } from '../banking/wallet-funding.service';
  * Flutterwave (live) — extraction below is deliberately tolerant of field
  * placement; unmatched or unrecognised events are logged/audited, never guessed.
  */
-@Controller('webhooks/flutterwave/v4')
+@Controller(['webhooks/flutterwave/v4', 'webhooks/flutterwave-v4'])
 export class FlutterwaveV4Controller {
   private readonly logger = new Logger(FlutterwaveV4Controller.name);
 
