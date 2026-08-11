@@ -24,7 +24,7 @@ export class MetaCloudAdapter implements ChannelAdapter {
   constructor(private readonly config: ConfigService) {}
 
   private get graphVersion(): string {
-    return this.config.get<string>('META_GRAPH_VERSION') ?? 'v21.0';
+    return this.config.get<string>('META_GRAPH_VERSION') ?? 'v22.0';
   }
 
   /** Verify the GET webhook subscription challenge. */
