@@ -226,9 +226,19 @@ export class OnboardingService {
     kyc: string,
   ): Promise<{ ok: true; wallet: Awaited<ReturnType<WalletsRepository['create']>> } | { ok: false; badId: boolean }> {
     const currency = MARKET_CURRENCY[market];
+    
+    // Check if the user already has a wallet for this currency
+    const existingWallets = await this.wallets.findByUserId(user.id);
+    const existingWallet = existingWallets.find((w) => w.currency === currency);
+    
+    if (existingWallet && existingWallet.virtual_account_number) {
+      this.logger.log(`Using existing wallet and virtual account for user ${user.id}`);
+      return { ok: true, wallet: existingWallet };
+    }
+
     const firstName = user.first_name ?? (user.full_name ?? '').trim().split(/\s+/)[0];
     const lastName = user.last_name ?? firstName;
-    const reference = `GPA-${market}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    const reference = existingWallet?.reference ?? `GPA-${market}-${randomBytes(3).toString('hex').toUpperCase()}`;
     let account: CreateVirtualAccountResult;
     try {
       account = await this.partners.forCurrency(currency).createVirtualAccount({
@@ -254,13 +264,22 @@ export class OnboardingService {
       return { ok: false, badId: /bvn|nin|invalid|not\s*found|mismatch|verif/i.test(reason) };
     }
 
-    const wallet = await this.wallets.create({ userId: user.id, reference, currency, market });
+    let wallet = existingWallet;
+    if (!wallet) {
+      wallet = await this.wallets.create({ userId: user.id, reference, currency, market });
+    }
     await this.wallets.setVirtualAccount(
       wallet.id,
       account.accountNumber,
       account.bankName,
       account.providerRef,
     );
+
+    // Update local object fields
+    wallet.virtual_account_number = account.accountNumber;
+    wallet.virtual_bank_name = account.bankName;
+    wallet.virtual_account_ref = account.providerRef ?? null;
+
     await this.users.update(user.id, { kyc_id: kyc, kyc_status: 'verified' });
     await this.audit.record({
       userId: user.id,

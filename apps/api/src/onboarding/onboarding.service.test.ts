@@ -291,6 +291,63 @@ describe('OnboardingService', () => {
       expect(h.wallets.create).not.toHaveBeenCalled();
     });
 
+    it('reuses existing wallet and skips Flutterwave if virtual account number is already provisioned', async () => {
+      const h = harness({ channelName: 'meta', onboardingFlow: true });
+      await h.svc.handle(msg({ text: 'hi' }));
+      
+      const mockWallet = {
+        id: 'w1',
+        reference: 'GPA-NG-PRE',
+        currency: 'NGN',
+        market: 'NG',
+        virtual_account_number: '1234567890',
+        virtual_bank_name: 'Wema Bank',
+        virtual_account_ref: 'flw_ref_pre',
+      };
+      h.wallets.findByUserId = vi.fn().mockResolvedValue([mockWallet]);
+      
+      const res = await h.svc.handleFlowExchange('u1', 'data_exchange', 'ACCOUNT_DETAILS', {
+        first_name: 'Ada',
+        last_name: 'Obi',
+        id_type: 'BVN',
+        id_number: '12345678901',
+      });
+      
+      expect(res.screen).toBe('ADDRESS');
+      expect(h.createVirtualAccount).not.toHaveBeenCalled();
+      expect(h.wallets.create).not.toHaveBeenCalled();
+    });
+
+    it('reuses existing wallet reference and updates virtual account if wallet exists but lacks virtual account number', async () => {
+      const h = harness({ channelName: 'meta', onboardingFlow: true });
+      await h.svc.handle(msg({ text: 'hi' }));
+      
+      const mockWallet = {
+        id: 'w1',
+        reference: 'GPA-NG-PRE-NOACCT',
+        currency: 'NGN',
+        market: 'NG',
+        virtual_account_number: null,
+        virtual_bank_name: null,
+        virtual_account_ref: null,
+      };
+      h.wallets.findByUserId = vi.fn().mockResolvedValue([mockWallet]);
+      
+      const res = await h.svc.handleFlowExchange('u1', 'data_exchange', 'ACCOUNT_DETAILS', {
+        first_name: 'Ada',
+        last_name: 'Obi',
+        id_type: 'BVN',
+        id_number: '12345678901',
+      });
+      
+      expect(res.screen).toBe('ADDRESS');
+      expect(h.createVirtualAccount).toHaveBeenCalledWith(expect.objectContaining({
+        userRef: 'GPA-NG-PRE-NOACCT',
+      }));
+      expect(h.wallets.create).not.toHaveBeenCalled();
+      expect(h.wallets.setVirtualAccount).toHaveBeenCalledWith('w1', '9900001111', 'Wema Bank', 'flw_ref_1');
+    });
+
     it('rejects mismatched PINs on the PIN screen', async () => {
       const h = harness({ channelName: 'meta', onboardingFlow: true });
       await h.svc.handle(msg({ text: 'hi' }));
