@@ -150,6 +150,7 @@ export class TransferService {
         user,
         `✅ Sent ${formatMoney(cur, amount)} to *${txn.recipient_name}*.\nNew balance: ${formatMoney(cur, fromBalance)}\nRef: ${txn.id.slice(0, 8)}`,
       );
+      const recipientUser = await this.userOf(recipient);
       try {
         const png = this.receipts.render({
           status: 'COMPLETED',
@@ -157,7 +158,8 @@ export class TransferService {
           amount,
           sender: user.full_name ?? 'GuildPay user',
           recipient: txn.recipient_name ?? recipient.reference,
-          account: recipient.reference,
+          bank: 'GuildPay Wallet',
+          account: recipientUser ? recipientUser.wa_phone : recipient.reference,
           reference: txn.id.slice(0, 8).toUpperCase(),
           date: new Date(txn.created_at),
         });
@@ -170,7 +172,6 @@ export class TransferService {
       } catch (err) {
         this.logger.warn(`receipt render/send failed: ${(err as Error).message}`);
       }
-      const recipientUser = await this.userOf(recipient);
       if (recipientUser) {
         await this.channel.send({
           to: recipientUser.wa_phone,

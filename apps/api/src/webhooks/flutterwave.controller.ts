@@ -246,6 +246,7 @@ export class FlutterwaveController {
         reference: txn.id.slice(0, 8).toUpperCase(),
         providerRef,
         providerId,
+        date: new Date(txn.created_at),
       });
       await this.channel.send({
         to: user.wa_phone,
