@@ -19,6 +19,6 @@ const png = svc.render({
   date: new Date(),
 });
 
-const outPath = '/Users/user/.gemini/antigravity-ide/brain/15ffdd6a-f470-4f34-93f6-cc4195c389e9/scratch/sample-receipt.png';
+const outPath = '/Users/user/.gemini/antigravity-ide/brain/3aacddd0-b133-4e73-a652-a71316351319/sample-receipt.png';
 writeFileSync(outPath, png);
 console.log(`PNG generated at ${outPath}`);
