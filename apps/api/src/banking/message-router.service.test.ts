@@ -63,6 +63,7 @@ function harness(intentReplies: string[]) {
     {} as TransactionHistoryService,
     conversation,
     pendingIntent,
+    {} as any, // PinService
   );
 
   const say = (text: string) => router.handle({ waPhone: user.wa_phone, type: 'text', text } as InboundMessage);
