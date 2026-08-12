@@ -105,8 +105,8 @@ export class MessageRouter {
     const pendingConf = await this.txns.findLatestByStatus(wallet.id, ['pending_confirmation']);
     if (pendingConf) {
       const svc = pendingConf.type === 'bank_transfer' ? this.bankTransfer : this.transfer;
-      if (msg.interactiveReplyId === 'txn_confirm') return svc.confirm(user, pendingConf);
-      if (msg.interactiveReplyId === 'txn_cancel' || lower === 'cancel') {
+      if (msg.interactiveReplyId?.startsWith('txn_confirm') || msg.interactiveReplyId?.startsWith('txn_conf_') || lower.startsWith('confirm') || lower === 'yes') return svc.confirm(user, pendingConf);
+      if (msg.interactiveReplyId?.startsWith('txn_cancel') || msg.interactiveReplyId?.startsWith('txn_canc_') || lower.startsWith('cancel') || lower === 'no') {
         return svc.cancel(user, pendingConf);
       }
       return this.send(user, 'Please tap *Confirm* or *Cancel* to continue.');
