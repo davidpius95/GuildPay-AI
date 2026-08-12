@@ -19,6 +19,7 @@ import { ConversationService } from './conversation.service';
 import { PendingIntentService, type PendingIntent } from './pending-intent.service';
 import { IntentResultSchema, type IntentResult } from './orchestrator.service';
 import { formatMoney } from './money';
+import { PinService } from './pin.service';
 
 /**
  * Router for onboarded users. State-machine first: a pending OTP or confirmation
@@ -44,6 +45,7 @@ export class MessageRouter {
     private readonly history: TransactionHistoryService,
     private readonly conversation: ConversationService,
     private readonly pendingIntent: PendingIntentService,
+    private readonly pins: PinService,
   ) {}
 
   /** Snap-to-pay: an onboarded user sent a photo. Vision prefills a bank transfer. */
@@ -63,20 +65,31 @@ export class MessageRouter {
    * pending transaction was found; the actual outcome (success / wrong PIN /
    * failure) is delivered to the user as chat messages by submitPin.
    */
-  async submitPinForTxn(txnId: string, pin: string): Promise<'dispatched' | 'stale'> {
+  async submitPinForTxn(txnId: string, pin: string): Promise<'dispatched' | 'stale' | 'invalid_pin'> {
     const txn = await this.txns.findById(txnId);
     if (!txn || txn.status !== 'pending_otp') return 'stale';
     const wallet = await this.wallets.findById(txn.wallet_id);
     if (!wallet) return 'stale';
     const user = await this.users.findById(wallet.user_id);
     if (!user) return 'stale';
+
+    const isFormatValid = this.pins.isValidFormat(pin);
+    const isPinCorrect = user.pin_hash && this.pins.verify(pin, user.pin_hash);
+
     const svc = txn.type === 'bank_transfer' ? this.bankTransfer : this.transfer;
     
-    // Process asynchronously so we don't block the WhatsApp Flow webhook
+    // Process asynchronously so we don't block the WhatsApp Flow webhook.
+    // If the PIN is invalid, the async job will handle recording the failure,
+    // sending a chat message, and counting attempts, but we also return 'invalid_pin'
+    // so the Flow modal can stay open and show an error immediately.
     svc.submitPin(user, wallet, pin).catch(err => {
       console.error(`Background PIN submission failed for txn ${txnId}:`, err);
     });
     
+    if (!isFormatValid || !isPinCorrect) {
+      return 'invalid_pin';
+    }
+
     return 'dispatched';
   }
 

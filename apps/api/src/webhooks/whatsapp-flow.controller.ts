@@ -112,7 +112,8 @@ export class WhatsappFlowController {
 
     // PIN submitted → run the existing PIN money-gate or first-time PIN setup.
     if (request.action === 'data_exchange' && request.screen === PIN_SCREEN) {
-      const pin = typeof request.data?.['pin'] === 'string' ? (request.data['pin'] as string) : '';
+      const rawPin = request.data?.['pin'];
+      const pin = rawPin !== undefined && rawPin !== null ? String(rawPin).trim() : '';
 
       let result: string;
       let message: string;
@@ -121,7 +122,7 @@ export class WhatsappFlowController {
         const userId = tokenData.replace('onboard_', '');
         result = await this.onboarding.submitPinFlow(userId, pin);
         if (result === 'invalid') {
-          message = 'PIN must be exactly 4 digits. Please try again in the chat.';
+          return this.withError(version, PIN_SCREEN, 'PIN must be exactly 4 digits.');
         } else if (result === 'stale') {
           message = 'You have already set up your PIN. Please continue in the chat.';
         } else {
@@ -130,6 +131,9 @@ export class WhatsappFlowController {
       } else {
         const txnId = tokenData; // If not onboarding, the token is the txnId.
         result = await this.router.submitPinForTxn(txnId, pin);
+        if (result === 'invalid_pin') {
+          return this.withError(version, PIN_SCREEN, 'Incorrect PIN. Please try again.');
+        }
         message =
           result === 'dispatched'
             ? 'Processing your transfer — check your WhatsApp chat for the confirmation.'
@@ -149,6 +153,10 @@ export class WhatsappFlowController {
 
     this.logger.warn(`unhandled flow action/screen: ${request.action}/${request.screen}`);
     throw new HttpException('unsupported flow request', HttpStatus.BAD_REQUEST);
+  }
+
+  private withError(version: string, screen: string, message: string): Record<string, unknown> {
+    return { version, screen, data: { has_error: true, error_message: `⚠️ ${message}` } };
   }
 
   /**

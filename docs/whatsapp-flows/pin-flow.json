@@ -8,10 +8,18 @@
     {
       "id": "PIN_SCREEN",
       "title": "Approve Transaction",
-      "data": {},
+      "data": {
+        "error_message": { "type": "string", "__example__": "" },
+        "has_error": { "type": "boolean", "__example__": false }
+      },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
+          {
+            "type": "TextBody",
+            "text": "${data.error_message}",
+            "visible": "${data.has_error}"
+          },
           {
             "type": "TextBody",
             "text": "Enter your 4-digit GuildPay transaction PIN to approve this transfer. Your PIN is never shown in the chat."
