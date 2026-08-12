@@ -71,7 +71,12 @@ export class MessageRouter {
     const user = await this.users.findById(wallet.user_id);
     if (!user) return 'stale';
     const svc = txn.type === 'bank_transfer' ? this.bankTransfer : this.transfer;
-    await svc.submitPin(user, wallet, pin);
+    
+    // Process asynchronously so we don't block the WhatsApp Flow webhook
+    svc.submitPin(user, wallet, pin).catch(err => {
+      console.error(`Background PIN submission failed for txn ${txnId}:`, err);
+    });
+    
     return 'dispatched';
   }
 
