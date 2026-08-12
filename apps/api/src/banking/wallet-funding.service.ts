@@ -7,6 +7,7 @@ import { TransactionsRepository } from '../database/transactions.repository';
 import { UsersRepository } from '../database/users.repository';
 import { AuditRepository } from '../database/audit.repository';
 import { WalletService } from './wallet.service';
+import { ConversationService } from './conversation.service';
 import { formatMoney } from './money';
 
 export interface CreditInboundParams {
@@ -35,6 +36,7 @@ export class WalletFundingService {
     private readonly users: UsersRepository,
     private readonly audit: AuditRepository,
     private readonly wallet: WalletService,
+    private readonly conversation: ConversationService,
   ) {}
 
   /** Returns true if a credit was applied, false if it was a duplicate. */
@@ -73,10 +75,12 @@ export class WalletFundingService {
 
     const user = await this.users.findById(wallet.user_id);
     if (user) {
+      const msg = `💰 Received ${formatMoney(currency, amount)}.\nNew balance: ${formatMoney(currency, balance)}`;
+      await this.conversation.record(user.id, 'assistant', msg);
       await this.channel.send({
         to: user.wa_phone,
         kind: 'text',
-        body: `💰 Received ${formatMoney(currency, amount)}.\nNew balance: ${formatMoney(currency, balance)}`,
+        body: msg,
       });
     }
     this.logger.log(`wallet ${wallet.reference} funded ${amount} ${currency} (providerRef=${providerRef})`);

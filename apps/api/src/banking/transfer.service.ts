@@ -3,6 +3,7 @@ import type { Currency } from '@guildpay/shared';
 import { CHANNEL_ADAPTER } from '../channel/channel.module';
 import type { ChannelAdapter } from '../channel/channel-adapter';
 import { WhatsappFlowService } from '../channel/whatsapp-flow.service';
+import { ConversationService } from './conversation.service';
 import { UsersRepository, type UserRow } from '../database/users.repository';
 import { WalletsRepository, type WalletRow } from '../database/wallets.repository';
 import { TransactionsRepository, type TransactionRow } from '../database/transactions.repository';
@@ -33,6 +34,7 @@ export class TransferService {
     private readonly pins: PinService,
     private readonly receipts: ReceiptService,
     private readonly flows: WhatsappFlowService,
+    private readonly conversation: ConversationService,
   ) {}
 
   /** Step 1 — validate, create a pending_confirmation transaction, show the card. */
@@ -57,7 +59,7 @@ export class TransferService {
 
     const recipientUser = await this.userOf(recipient);
     const recipientName = recipientUser?.full_name ?? recipient.reference;
-    await this.txns.create({
+    const txn = await this.txns.create({
       walletId: wallet.id,
       type: 'p2p_transfer',
       channel: 'text',
@@ -67,13 +69,15 @@ export class TransferService {
       recipientRef: recipient.reference,
       status: 'pending_confirmation',
     });
+    const body = `Send ${formatMoney(cur, amount)} to *${recipientName}*?`;
+    await this.conversation.record(user.id, 'assistant', body);
     await this.channel.send({
       to: user.wa_phone,
       kind: 'interactive',
-      body: `Send ${formatMoney(cur, amount)} to *${recipientName}*?`,
+      body,
       buttons: [
-        { id: 'txn_confirm', title: 'Confirm ✅' },
-        { id: 'txn_cancel', title: 'Cancel' },
+        { id: `txn_confirm:${txn.id}`, title: 'Confirm ✅' },
+        { id: `txn_cancel:${txn.id}`, title: 'Cancel' },
       ],
     });
   }
@@ -86,13 +90,15 @@ export class TransferService {
     if (this.channel.name === 'meta' && this.flows.isEnabled()) {
       const cur = txn.currency as Currency;
       const isSetup = !user.pin_hash;
+      const body = isSetup
+            ? `🔐 You don't have a transaction PIN yet.\nTap *Set PIN* to securely set your 4-digit PIN.`
+            : `🔐 Approve your transfer of *${formatMoney(cur, txn.amount)}* to ${txn.recipient_name}.\nTap *Verify Transaction* to enter your PIN securely.`;
+      await this.conversation.record(user.id, 'assistant', body);
       await this.channel.send(
         this.flows.buildPinFlowMessage(
           user.wa_phone,
           txn.id,
-          isSetup
-            ? `🔐 You don't have a transaction PIN yet.\nTap *Set PIN* to securely set your 4-digit PIN.`
-            : `🔐 Approve your transfer of *${formatMoney(cur, txn.amount)}* to ${txn.recipient_name}.\nTap *Verify Transaction* to enter your PIN securely.`,
+          body,
           isSetup ? 'Set PIN' : 'Verify Transaction',
         ),
       );
@@ -163,6 +169,7 @@ export class TransferService {
           reference: txn.id.slice(0, 8).toUpperCase(),
           date: new Date(txn.created_at),
         });
+        await this.conversation.record(user.id, 'assistant', `Transfer complete — ${formatMoney(cur, amount)}`);
         await this.channel.send({
           to: user.wa_phone,
           kind: 'image',
@@ -173,16 +180,20 @@ export class TransferService {
         this.logger.warn(`receipt render/send failed: ${(err as Error).message}`);
       }
       if (recipientUser) {
+        const msg = `💰 You received ${formatMoney(cur, amount)} from *${user.full_name ?? 'a GuildPay user'}*.\nNew balance: ${formatMoney(cur, toBalance)}`;
+        await this.conversation.record(recipientUser.id, 'assistant', msg);
         await this.channel.send({
           to: recipientUser.wa_phone,
           kind: 'text',
-          body: `💰 You received ${formatMoney(cur, amount)} from *${user.full_name ?? 'a GuildPay user'}*.\nNew balance: ${formatMoney(cur, toBalance)}`,
+          body: msg,
         });
       }
+      const saveMsg = `Save *${txn.recipient_name}* as a beneficiary?`;
+      await this.conversation.record(user.id, 'assistant', saveMsg);
       await this.channel.send({
         to: user.wa_phone,
         kind: 'interactive',
-        body: `Save *${txn.recipient_name}* as a beneficiary?`,
+        body: saveMsg,
         buttons: [
           { id: 'bene_save', title: 'Save ✅' },
           { id: 'bene_no', title: 'No thanks' },
@@ -247,6 +258,7 @@ export class TransferService {
   }
 
   private async send(user: UserRow, body: string): Promise<void> {
+    await this.conversation.record(user.id, 'assistant', body);
     await this.channel.send({ to: user.wa_phone, kind: 'text', body });
   }
 }

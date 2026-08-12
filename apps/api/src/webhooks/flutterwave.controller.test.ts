@@ -35,8 +35,9 @@ function harness(over: { duplicate?: boolean; status?: string; wallet?: unknown 
   const users = { findById: vi.fn(async () => ({ wa_phone: '2348030000000' })) } as unknown as UsersRepository;
   const audit = { record } as unknown as AuditRepository;
   const walletSvc = { credit } as unknown as WalletService;
+  const conversation = { record: vi.fn(async () => undefined) } as any;
   // Real funding service wired to the same mocks so the credit path is exercised.
-  const funding = new WalletFundingService(channel, txns, users, audit, walletSvc);
+  const funding = new WalletFundingService(channel, txns, users, audit, walletSvc, conversation);
 
   const controller = new FlutterwaveController(
     { get: vi.fn(() => 'secret-hash') } as unknown as ConfigService,

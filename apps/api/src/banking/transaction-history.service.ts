@@ -6,6 +6,7 @@ import { CHANNEL_ADAPTER } from '../channel/channel.module';
 import type { ChannelAdapter } from '../channel/channel-adapter';
 import type { UserRow } from '../database/users.repository';
 import type { WalletRow } from '../database/wallets.repository';
+import { ConversationService } from './conversation.service';
 import { formatMoney } from './money';
 
 /** One line of wallet history: a ledger entry plus context from its transaction. */
@@ -31,14 +32,17 @@ export class TransactionHistoryService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     @Inject(CHANNEL_ADAPTER) private readonly channel: ChannelAdapter,
+    private readonly conversation: ConversationService,
   ) {}
 
   async send(user: UserRow, wallet: WalletRow): Promise<void> {
     const lines = await this.recent(wallet.id, HISTORY_LIMIT);
+    const body = formatHistory(lines, wallet.currency as Currency);
+    await this.conversation.record(user.id, 'assistant', body);
     await this.channel.send({
       to: user.wa_phone,
       kind: 'text',
-      body: formatHistory(lines, wallet.currency as Currency),
+      body,
     });
   }
 

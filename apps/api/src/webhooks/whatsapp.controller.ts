@@ -119,7 +119,17 @@ export class WhatsappController {
           await this.router.handle(msg);
         }
       } catch (err) {
-        this.logger.error(`message handling failed: ${(err as Error).message}`);
+        const errorMsg = (err as Error).message;
+        this.logger.error(`message handling failed: ${errorMsg}`);
+        try {
+          await this.meta.send({
+            to: msg.waPhone,
+            kind: 'text',
+            body: `⚠️ Oops, something went wrong processing your request: *${errorMsg}*\n\nPlease try again in a moment.`,
+          });
+        } catch (sendErr) {
+          this.logger.error(`failed to send fallback error reply: ${(sendErr as Error).message}`);
+        }
       }
     }
   }

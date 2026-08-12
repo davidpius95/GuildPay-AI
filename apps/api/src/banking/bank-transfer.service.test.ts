@@ -76,9 +76,10 @@ function make(
   };
   const partners = { forCurrency: vi.fn(() => adapter) } as unknown as PartnerService;
   const receipts = { render: vi.fn(() => Buffer.from('png')) } as unknown as import('./receipt.service').ReceiptService;
+  const conversation = { record: vi.fn(async () => undefined) } as any;
 
   const flows = { isEnabled: () => false } as unknown as WhatsappFlowService;
-  const svc = new BankTransferService(channel, users, txns, audit, wallet$, pins, partners, receipts, flows);
+  const svc = new BankTransferService(channel, users, txns, audit, wallet$, pins, partners, receipts, flows, conversation);
   return { svc, channel, txns, wallet: wallet$, users, audit, bankTransfer, adapter };
 }
 

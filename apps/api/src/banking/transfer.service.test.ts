@@ -53,9 +53,10 @@ function make(failCount = 1) {
     transfer: vi.fn(async () => ({ fromBalance: '8000', toBalance: '2000' })),
   } as unknown as WalletService;
   const receipts = { render: vi.fn(() => Buffer.from('png')) } as unknown as ReceiptService;
+  const conversation = { record: vi.fn(async () => undefined) } as any;
 
   const flows = { isEnabled: () => false } as unknown as WhatsappFlowService;
-  const svc = new TransferService(channel, users, wallets, txns, audit, wallet, pins, receipts, flows);
+  const svc = new TransferService(channel, users, wallets, txns, audit, wallet, pins, receipts, flows, conversation);
   return { svc, channel, txns, wallet, users, audit };
 }
 

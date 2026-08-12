@@ -13,6 +13,7 @@ import { WalletService, InsufficientFundsError } from './wallet.service';
 import { PinService } from './pin.service';
 import { ReceiptService } from './receipt.service';
 import { formatMoney } from './money';
+import { ConversationService } from './conversation.service';
 
 const MAX_PIN_ATTEMPTS = 3;
 
@@ -37,6 +38,7 @@ export class BankTransferService {
     private readonly partners: PartnerService,
     private readonly receipts: ReceiptService,
     private readonly flows: WhatsappFlowService,
+    private readonly conversation: ConversationService,
   ) {}
 
   /** Step 1 — resolve bank + account name, then show the confirmation card. */
@@ -80,7 +82,7 @@ export class BankTransferService {
       return this.send(user, `I couldn't verify ${accountNumber} at ${bank.name}. Double-check the account number and bank.`);
     }
 
-    await this.txns.create({
+    const txn = await this.txns.create({
       walletId: wallet.id,
       type: 'bank_transfer',
       channel: 'text',
@@ -91,18 +93,15 @@ export class BankTransferService {
       bankCode: bank.code,
       status: 'pending_confirmation',
     });
+    const body = `*Bank Transfer*\nTo: ${accountName}\nBank: ${bank.name}\nAccount: ${accountNumber}\nAmount: ${formatMoney(cur, amount)}\n\nDo you want to proceed?`;
+    await this.conversation.record(user.id, 'assistant', body);
     await this.channel.send({
       to: user.wa_phone,
       kind: 'interactive',
-      body:
-        `Please confirm this transfer:\n\n` +
-        `Amount: *${formatMoney(cur, amount)}*\n` +
-        `To: ⚠️ *${accountName}*\n` +
-        `Bank: ${bank.name}\n` +
-        `Account: ${accountNumber}`,
+      body,
       buttons: [
-        { id: 'txn_confirm', title: 'Confirm ✅' },
-        { id: 'txn_cancel', title: 'Cancel' },
+        { id: `txn_conf_${txn.id}`, title: 'Confirm' },
+        { id: `txn_canc_${txn.id}`, title: 'Cancel' },
       ],
     });
   }
@@ -137,7 +136,13 @@ export class BankTransferService {
 
   async cancel(user: UserRow, txn: TransactionRow): Promise<void> {
     await this.txns.setStatus(txn.id, 'cancelled');
-    await this.send(user, 'Transfer cancelled. No money has moved.');
+    const msg = 'Transfer cancelled. You can start a new transfer anytime.';
+    await this.conversation.record(user.id, 'assistant', msg);
+    await this.channel.send({
+      to: user.wa_phone,
+      kind: 'text',
+      body: msg,
+    });
   }
 
   /** Step 3 — PIN verified: debit the ledger, then call the NIP payout. */
@@ -312,11 +317,14 @@ export class BankTransferService {
         providerId, // Flutterwave transaction id — shown as a separate "ID" row
         date: new Date(txn.created_at),
       });
+      const msg = `✅ Success! Sent ${formatMoney(txn.currency as Currency, txn.amount)} to ${txn.recipient_name} at ${bankName ?? 'the bank'}.`;
+      await this.conversation.record(user.id, 'assistant', msg);
       await this.channel.send({
         to: user.wa_phone,
         kind: 'image',
         image: png,
-        caption: `${completed ? 'Transfer complete' : 'Transfer processing'} — ${formatMoney(wallet.currency as Currency, amount)}`,
+        mimeType: 'image/png',
+        caption: msg,
       });
     } catch (err) {
       this.logger.warn(`receipt render/send failed: ${(err as Error).message}`);
@@ -324,6 +332,7 @@ export class BankTransferService {
   }
 
   private async send(user: UserRow, body: string): Promise<void> {
+    await this.conversation.record(user.id, 'assistant', body);
     await this.channel.send({ to: user.wa_phone, kind: 'text', body });
   }
 }

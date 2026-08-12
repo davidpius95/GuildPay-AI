@@ -29,7 +29,8 @@ function harness(over: { duplicate?: boolean; wallet?: unknown } = {}) {
   const users = { findById: vi.fn(async () => ({ wa_phone: '2348030000000' })) } as unknown as UsersRepository;
   const audit = { record } as unknown as AuditRepository;
   const walletSvc = { credit } as unknown as WalletService;
-  const funding = new WalletFundingService(channel, txns, users, audit, walletSvc);
+  const conversation = { record: vi.fn(async () => undefined) } as any;
+  const funding = new WalletFundingService(channel, txns, users, audit, walletSvc, conversation);
 
   const controller = new FlutterwaveV4Controller(
     { get: vi.fn(() => SECRET) } as unknown as ConfigService,

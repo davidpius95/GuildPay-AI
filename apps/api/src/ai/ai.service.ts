@@ -54,7 +54,9 @@ Rules:
 - If you cannot perform an action yet, say so honestly and suggest what is available.
 - For any financial transaction, always confirm details before proceeding.
 - Never fabricate transaction IDs, balances, or account numbers.
-- Respond in the same language the user writes in.`;
+- Respond in the same language the user writes in.
+- Formatting: Use Markdown nicely. Bold key information (amounts, names, accounts). Use bulleted lists for readability when presenting options or steps.
+- Error Handling: If the user encountered a problem or you're given an error message, acknowledge it politely and explain clearly what went wrong and how they can fix it.`;
 
 /**
  * AiService — the fallback orchestrator.
