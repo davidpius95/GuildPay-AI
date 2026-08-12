@@ -27,13 +27,13 @@ cd "$ROOT"
 # Use sshpass transparently when a password is provided; otherwise plain ssh (keys).
 if [ -n "${SSHPASS:-}" ]; then
   export SSHPASS
-  SSH="sshpass -e ssh -p $SSH_PORT -o StrictHostKeyChecking=accept-new"
-  RSH="sshpass -e ssh -p $SSH_PORT -o StrictHostKeyChecking=accept-new"
-  SCP="sshpass -e scp -P $SSH_PORT -o StrictHostKeyChecking=accept-new"
+  SSH="sshpass -e ssh -p $SSH_PORT -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=60"
+  RSH="sshpass -e ssh -p $SSH_PORT -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=60"
+  SCP="sshpass -e scp -P $SSH_PORT -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=60"
 else
-  SSH="ssh -p $SSH_PORT"
-  RSH="ssh -p $SSH_PORT"
-  SCP="scp -P $SSH_PORT"
+  SSH="ssh -p $SSH_PORT -o ServerAliveInterval=60"
+  RSH="ssh -p $SSH_PORT -o ServerAliveInterval=60"
+  SCP="scp -P $SSH_PORT -o ServerAliveInterval=60"
 fi
 
 # 1. Guard: never deploy uncommitted code (prod must map to a git commit).
